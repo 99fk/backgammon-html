@@ -1,3 +1,24 @@
+<!--
+
+Backgammon Html
+
+Copyright (C) 2025 - Fatih (https://github.com/99fk)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+-->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -380,6 +401,17 @@ const btnRestart = document.getElementById("btn-restart");
 const btnRoll = document.getElementById("btn-roll");
 const turnIndicator = document.getElementById("turn-indicator");
 
+
+
+// --- Roll button enable/disable helper ---
+function setRollEnabled(on){
+  try {
+    btnRoll.disabled = !on;
+    btnRoll.style.opacity = on ? "1" : "0.5";
+    btnRoll.style.pointerEvents = on ? "auto" : "none";
+  } catch(e){}
+}
+
 function setTurnIndicator() {
   const isWhite = currentPlayer === "#fff";
   turnIndicator.textContent = isWhite ? "White" : "Black";
@@ -406,17 +438,24 @@ function updateDiceUI() {
   }
   renderDie("dice1", dice[0]); renderDie("dice2", dice[1]);
 }
+
 function forcePass(reason="No legal moves."){
   if (gameOver) return;
   const next=currentPlayer==="#fff"?"Black":"White";
   showToast(`${reason} Turn passes to ${next}.`);
   dice=[]; updateDiceUI(); selectedPoint=null; possibleMoves=[];
   bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
-  currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
-  setTurnIndicator();
-  document.querySelector("#dice-container button").classList.add("highlight");
-  computeHints(); updateTrayHighlight(); redraw(); lastProgress=Date.now();
+
+  // Delay the turn switch slightly; also re-enable rolling
+  setTimeout(() => {
+    currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+    setTurnIndicator();
+    document.querySelector("#dice-container button").classList.add("highlight");
+    setRollEnabled(true);
+    computeHints(); updateTrayHighlight(); redraw(); lastProgress=Date.now();
+  }, 50);
 }
+
 function toggleSound(){
   soundEnabled = !soundEnabled;
   btnSound.textContent = soundEnabled ? "🔈 Sound: On" : "🔇 Sound: Off";
@@ -446,6 +485,7 @@ function restartGame() {
   initPieces(); updateDiceUI(); updateTrayDOM(); computeHints(); updateTrayHighlight(); redraw();
   document.querySelector("#dice-container button").classList.add("highlight");
   lastProgress = Date.now();
+   setRollEnabled(true);
 }
 btnRestart.addEventListener("click", restartGame);
 
@@ -634,6 +674,54 @@ function playMoveSound(){
   gain.gain.setValueAtTime(.3,actx.currentTime); gain.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.1);
   osc.connect(gain); gain.connect(actx.destination); osc.start(); osc.stop(actx.currentTime+.1);
 }
+
+function playHitSound(){
+  if(!soundEnabled) return;
+  const actx = new (window.AudioContext||window.webkitAudioContext)();
+  // "Thwack" + short noise burst
+  const osc = actx.createOscillator();
+  const g = actx.createGain();
+  osc.type = 'square';
+  const t0 = actx.currentTime;
+  osc.frequency.setValueAtTime(220, t0);
+  osc.frequency.exponentialRampToValueAtTime(110, t0 + 0.12);
+  g.gain.setValueAtTime(0.35, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.12);
+  osc.connect(g); g.connect(actx.destination);
+  osc.start(t0); osc.stop(t0 + 0.14);
+
+  // quick noise "clack"
+  const N = 256;
+  const noise = actx.createBufferSource();
+  const buf = actx.createBuffer(1, N, actx.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<N;i++) data[i] = (Math.random()*2-1) * (1 - i/N) * 0.6;
+  noise.buffer = buf;
+  const ng = actx.createGain();
+  ng.gain.setValueAtTime(0.28, t0);
+  ng.gain.exponentialRampToValueAtTime(0.001, t0 + 0.07);
+  noise.connect(ng); ng.connect(actx.destination);
+  noise.start(t0 + 0.01);
+}
+
+function playWinSound(){
+  if(!soundEnabled) return;
+  const actx = new (window.AudioContext||window.webkitAudioContext)();
+  const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+  const t0 = actx.currentTime;
+  notes.forEach((f, i) => {
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f, t0 + i*0.12);
+    g.gain.setValueAtTime(0.0, t0 + i*0.12);
+    g.gain.linearRampToValueAtTime(0.25, t0 + i*0.12 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + i*0.12 + 0.25);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0 + i*0.12);
+    o.stop(t0 + i*0.12 + 0.28);
+  });
+}
 function useDie(value){ const k=dice.indexOf(value); if(k===-1) return false; dice.splice(k,1); return true; }
 function moveOne(from,to){
   const src=points[from], dest=points[to], enemy=currentPlayer==="#fff"?"#000":"#fff";
@@ -670,7 +758,9 @@ function performBearOff(index){
     showToast((color==="#fff"?"White":"Black") + " wins! 🎉");
     dice=[]; updateDiceUI(); gameOver = true;
     btnRoll.classList.add("highlight");
-  }
+  
+    playWinSound();
+}
   lastProgress=Date.now();
   return true;
 }
@@ -774,24 +864,33 @@ function computeHints(){
   }
   applyTrayClasses();
 }
+
 function finishOrContinueTurn(){
   updateDiceUI();
   selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
   computeHints();
+
   if(dice.length===0 || gameOver){
     document.querySelector("#dice-container button").classList.add("highlight");
-    if(!gameOver){
-      currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
-      setTurnIndicator();
-    }
-    lastProgress=Date.now(); redraw(); scanUiSanityAndHeal(); return;
+    // Enable rolling after a short delay and (if not over) switch the player
+    setTimeout(() => {
+      if(!gameOver){
+        currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+        setTurnIndicator();
+      }
+      setRollEnabled(true);
+      lastProgress=Date.now(); redraw(); scanUiSanityAndHeal();
+    }, 20);
+    return;
   }
+
   if(bar[currentPlayer].length>0){
     const entries=getBarEntryMoves();
-    if(entries.length===0){ return forcePass("No legal bar entries."); }
+    if(entries.length===0){ forcePass("No legal bar entries."); return; }
     selectedPoint="bar"; possibleMoves=entries; redraw(); scanUiSanityAndHeal(); return;
   }
-  if(!hasAnyMove()){ return forcePass("No legal moves."); }
+  if(!hasAnyMove()){ forcePass("No legal moves."); return; }
+
   redraw(); scanUiSanityAndHeal();
 }
 
@@ -922,15 +1021,19 @@ function rollDice(){
   if(gameOver) return;
   document.querySelector("#dice-container button").classList.remove("highlight");
   if(dice.length>0) return;
+  setRollEnabled(false);
   playDiceSound();
   const d1=Math.floor(Math.random()*6)+1, d2=Math.floor(Math.random()*6)+1;
   dice = d1===d2 ? [d1,d1,d1,d1] : [d1,d2];
   lastProgress=Date.now();
   updateDiceUI();
+
+  // 500ms Pause
+  setTimeout(() => {
   setTurnIndicator();
-
+  
   selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
-
+  
   if(bar[currentPlayer].length>0){
     const entries=getBarEntryMoves();
     if(entries.length===0){ return forcePass("No legal bar entries."); }
@@ -939,6 +1042,8 @@ function rollDice(){
     return forcePass("No legal moves.");
   }
   computeHints(); updateTrayHighlight(); redraw(); scanUiSanityAndHeal();
+  }, 150);
+  return;
 }
 
 /* ===== Watchdog ===== */
@@ -1078,7 +1183,10 @@ function chooseGreedyMove(color){
 async function aiPlayTurn(){
   if(aiConfig.running) return;
   aiConfig.running = true;
-  try{
+  
+  // Disable roll while AI is thinking/playing
+  setRollEnabled(false);
+try{
     // Ensure hints/UI are ready
     computeHints(); redraw();
 
@@ -1136,16 +1244,21 @@ async function aiPlayTurn(){
       computeHints(); redraw();
     }
 
-    // Hand over if dice finished
+    
+// Hand over if dice finished
     if(!gameOver && dice.length===0){
       document.querySelector("#dice-container button").classList.add("highlight");
-      currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
-      setTurnIndicator();
-      computeHints(); redraw();
-      // If it's still AI (e.g., doubles exhausted), it will roll on next user click
+      // Delay the switch and re-enable rolling for the human
+      setTimeout(() => {
+        currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+        setTurnIndicator();
+        setRollEnabled(true);
+        computeHints(); redraw();
+      }, 150);
     }
-  } finally {
+} finally {
     aiConfig.running = false;
+    if (gameOver) { setRollEnabled(true); }
   }
 }
 
