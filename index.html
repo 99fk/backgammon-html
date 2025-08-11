@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Backgammon — Bear‑Off Click Highlight + Narrow Turn Badge</title>
+<style>
+
+  :root {
+    --wood1:#3e2723; --wood2:#4e342e; --panel:#6d4c41; --panel2:#8d6e63;
+    --hint: rgba(0,255,255,0.75); --selectFill: rgba(255,255,0,0.35); --selectStroke: rgba(255,255,0,0.9);
+    --glowCyan: #00ffff; --glowYellow:#ffeb3b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:linear-gradient(135deg,var(--wood1),var(--wood2));
+    min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    font-family:"Segoe UI",system-ui,sans-serif; color:#fff;}
+  #topbar {
+    width:100%; display:flex; justify-content:center; gap:10px; padding:10px; position:sticky; top:0;
+    background:linear-gradient(135deg,rgba(62,39,35,.8),rgba(78,52,46,.8)); backdrop-filter: blur(4px); z-index:10;
+  }
+  #topbar button, #topbar select {
+    background:var(--panel); border:none; color:#fff; padding:10px 14px; font-size:14px; border-radius:10px; box-shadow:0 0 10px #000a; cursor:pointer;
+  }
+  #topbar button:hover { background:var(--panel2); }
+  #wrap { display:flex; align-items:center; gap:12px; padding:10px; width:100%; justify-content:center; flex-wrap:wrap;}
+  canvas { width: 100%; max-width: 900px; height: auto; display: block; margin: 12px auto 0 auto; background:radial-gradient(circle,#d7ccc8,#bcaaa4); box-shadow: inset 0 0 0 10px #5d4037, 0 0 30px #000a, 0 0 0 15px #795548; border-radius:20px; border:4px solid #3e2723; touch-action: manipulation;}
+  #side { display:flex; flex-direction:column; gap:12px; }
+  .tray { width:140px; height:180px; background:rgba(0,0,0,.25); border:2px solid #0008; border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:10px 8px; box-shadow:0 6px 18px rgba(0,0,0,.25); user-select:none; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease; }
+  .tray h3 { margin:0; font-size:14px; letter-spacing:.3px; opacity:.9; }
+  .stone {
+    width:42px; height:42px; border-radius:50%; box-shadow:inset 0 0 3px #000a, 0 0 0 2px #222;
+    background: radial-gradient(circle at 35% 35%, #eee 0%, #fff 40%, #ddd 100%);
+  }
+  .stone.black { background: radial-gradient(circle at 35% 35%, #444 0%, #222 40%, #000 100%); }
+  .count { font-weight:800; font-size:22px; }
+  .tray.highlight-cyan {
+    box-shadow: 0 0 0 2px var(--glowCyan), 0 0 16px 4px rgba(0,255,255,.6);
+    animation: throb 1s ease-in-out infinite;
+  }
+  .tray.flash-yellow {
+    box-shadow: 0 0 0 3px var(--glowYellow), 0 0 26px 10px rgba(255,235,59,.9);
+    animation: flashPulse 1s ease-in-out infinite;
+  }
+  @keyframes throb { 0%{ transform:scale(1);} 50%{ transform:scale(1.03);} 100%{ transform:scale(1);} }
+  @keyframes flashPulse { 0%{ transform:scale(1);} 50%{ transform:scale(1.05);} 100%{ transform:scale(1);} }
+
+  #dice-container { position:static; margin-top:6px; display:flex; flex-direction:column; align-items:center; z-index:6; }
+  #dice-container button { background:var(--panel); border:none; color:#fff; padding:10px 20px; margin-bottom:10px; font-size:18px; border-radius:10px; box-shadow:0 0 10px #000a; cursor:pointer; }
+  #dice-container button:hover { background:var(--panel2); }
+  #dice-container button.highlight { animation:pulse 1s infinite; box-shadow:0 0 20px 5px #ffd54f; background:#ffb300; color:#000; }
+  @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.08);} 100%{transform:scale(1);} }
+  .dice-visual { display:flex; gap:12px; }
+  .dice { width:48px; height:48px; background:#fff; border-radius:10px; box-shadow:inset 0 0 3px #000a; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:2px; padding:6px; }
+  .pip { width:10px; height:10px; background:#000; border-radius:50%; justify-self:center; align-self:center; }
+
+  /* Narrow Turn Badge (100px) */
+  #turn-indicator-wrap { margin-top:8px; width:100%; display:flex; justify-content:center; }
+  #turn-indicator {
+    width:100px; text-align:center; font-size:14px; font-weight:800; padding:6px 8px; border-radius:10px;
+    box-shadow:0 0 10px #000a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .turn-white { background:#ffffffd0; color:#000; border:2px solid #fff; }
+  .turn-black { background:#000000b8; color:#fff; border:2px solid #222; }
+
+  #toast { position:fixed; top:110px; left:50%; transform:translateX(-50%) translateY(-6px); background:rgba(0,0,0,.8); color:#fff; padding:8px 14px; border-radius:10px; font-weight:600; font-size:14px; letter-spacing:.2px; box-shadow:0 6px 18px rgba(0,0,0,.25); opacity:0; transition:opacity .25s ease, transform .25s ease; pointer-events:none; z-index:7; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  @media (max-width: 900px) {
+    #side { flex-direction:row; }
+    .tray { width:140px; height:180px; background:rgba(0,0,0,.25); border:2px solid #0008; border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:10px 8px; box-shadow:0 6px 18px rgba(0,0,0,.25); user-select:none; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease; }
+    .count { font-size:20px; }
+  }
+
+/* === Mobile sizing tweaks === */
+@media (max-width: 700px){
+  #topbar { padding: 6px 8px; gap: 6px; }
+  #topbar button, #topbar select {
+    font-size: 14px;
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+  #wrap { flex-direction: column; align-items: center; gap: 8px; }
+  #side { flex-direction: row; gap: 8px; justify-content: center; width: 100%; }
+  .tray { width:140px; height:180px; background:rgba(0,0,0,.25); border:2px solid #0008; border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:10px 8px; box-shadow:0 6px 18px rgba(0,0,0,.25); user-select:none; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease; }
+  .stone { width: 34px; height: 34px; }
+  .count { font-size: 18px; }
+  .tray h3 { font-size: 13px; }
+  #dice-container .dice { width: 36px; height: 36px; }
+  #dice-container button { font-size: 16px; padding: 8px 12px; }
+}
+
+@media (max-width: 420px){
+  #topbar { padding: 6px; gap: 6px; }
+  #topbar button, #topbar select {
+    font-size: 13px;
+    padding: 7px 9px;
+    border-radius: 10px;
+  }
+  .tray { width:140px; height:180px; background:rgba(0,0,0,.25); border:2px solid #0008; border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:10px 8px; box-shadow:0 6px 18px rgba(0,0,0,.25); user-select:none; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease; }
+  .stone { width: 30px; height: 30px; }
+  .count { font-size: 16px; }
+  .tray h3 { font-size: 12px; }
+  #dice-container .dice { width: 34px; height: 34px; }
+  #dice-container button { font-size: 15px; padding: 8px 10px; }
+}
+
+
+/* === Desktop tweaks (no iframe, single-file responsive) === */
+@media (min-width: 1024px){
+  canvas { width: min(95vw, 1100px); height: auto; }
+  #topbar { gap: 12px; padding: 12px 16px; }
+  #topbar button, #topbar select { font-size: 16px; padding: 10px 14px; }
+  .tray { width: 160px; height: 200px; }
+  .stone { width: 44px; height: 44px; }
+  .count { font-size: 22px; }
+}
+
+
+/* === Trays below the board, compact layout === */
+#wrap { 
+  flex-direction: column; 
+  align-items: center; 
+  gap: 10px;
+}
+#side { 
+  flex-direction: row; 
+  gap: 10px; 
+  justify-content: center; 
+  width: 100%; 
+}
+.tray {
+  width: 110px; 
+  height: 110px; 
+  padding: 8px 6px; 
+  border-radius: 12px;
+}
+.tray h3 { 
+  font-size: 12px; 
+  margin-bottom: 4px;
+}
+.stone { 
+  width: 26px; 
+  height: 26px; 
+}
+.count { 
+  font-size: 16px; 
+}
+
+</style>
+
+<style id="theme-beautify">
+  :root{
+    --bg:#0f0f12;
+    --panel:#1b1e26;
+    --panel-2:#232736;
+    --accent:#82e3ff;
+    --accent-2:#ffe082;
+    --text:#e7ecf2;
+    --muted:#a7b0be;
+    --ring: rgba(130,227,255,.55);
+  }
+  body{
+    background: radial-gradient(1200px 600px at 50% -10%, #1a1d27 0%, #0f0f12 55%) fixed;
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    letter-spacing:.2px;
+  }
+  #topbar{
+    background: linear-gradient(180deg, rgba(18,20,28,.75), rgba(18,20,28,.35));
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    backdrop-filter: blur(8px) saturate(1.1);
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  #topbar button, #topbar select, #dice-container button{
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 2px 10px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.06);
+    border-radius: 12px;
+    transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .2s ease;
+  }
+  #topbar button:hover, #topbar select:hover, #dice-container button:hover{ 
+    transform: translateY(-1px);
+    border-color: rgba(130,227,255,.35);
+    box-shadow: 0 6px 18px rgba(0,0,0,.45), 0 0 0 3px var(--ring);
+  }
+  #topbar button:active, #dice-container button:active{
+    transform: translateY(0);
+    box-shadow: 0 3px 10px rgba(0,0,0,.35);
+  }
+  #dice-container{
+    margin-top: 14px;
+  }
+  #dice-container button.highlight{
+    background: linear-gradient(180deg,#ffd666,#ffb300);
+    border: 1px solid rgba(0,0,0,.25);
+    color:#111;
+    box-shadow: 0 10px 30px rgba(255,179,0,.35), 0 0 0 3px rgba(255,214,102,.35);
+  }
+  .dice-visual{ gap: 14px; }
+  .dice{ 
+    width: 52px; height: 52px; 
+    background: linear-gradient(160deg,#ffffff,#e6eef5);
+    border: 1px solid rgba(0,0,0,.2); 
+    box-shadow: 0 4px 14px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.8);
+  }
+  .pip{ width: 9px; height: 9px; background:#111; box-shadow: 0 1px 0 rgba(255,255,255,.5) inset; }
+  canvas{
+    background: radial-gradient(circle at 50% 35%, #e7d8cc 0%, #ccb2a2 55%, #b59787 100%);
+    border: 1px solid rgba(0,0,0,.35);
+    border-radius: 18px;
+    box-shadow:
+      0 25px 60px rgba(0,0,0,.55),
+      0 0 0 10px #5a3e33 inset,
+      0 0 0 16px rgba(0,0,0,.35) inset;
+  }
+  /* Triangles contrast slightly toned for a luxe look */
+  /* We can't change the drawing colors in JS here, but add a subtle overlay */
+  #board{
+    position: relative;
+  }
+  #board::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background: linear-gradient(180deg, rgba(0,0,0,.05), rgba(255,255,255,.04));
+    border-radius: 18px;
+  }
+  /* Turn badge */
+  #turn-indicator-wrap{ margin-top: 10px; }
+  #turn-indicator{
+    font-weight: 800; letter-spacing:.3px;
+    background: linear-gradient(180deg, rgba(130,227,255,.9), rgba(130,227,255,.65));
+    color:#001622; border: none;
+    box-shadow: 0 8px 26px rgba(130,227,255,.35), 0 0 0 3px var(--ring);
+  }
+  .turn-black{
+    background: linear-gradient(180deg, rgba(30,33,45,.95), rgba(30,33,45,.75)) !important;
+    color: var(--text) !important;
+    box-shadow: 0 8px 26px rgba(0,0,0,.45), 0 0 0 3px rgba(255,255,255,.06) !important;
+    border: 1px solid rgba(255,255,255,.08) !important;
+  }
+  /* Trays below board */
+  .tray{
+    width: 120px; height: 120px;
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 12px 30px rgba(0,0,0,.35);
+    border-radius: 14px;
+  }
+  .tray h3{ color: var(--muted); font-weight: 700; letter-spacing:.3px; }
+  .tray.highlight-cyan{ box-shadow: 0 0 0 2px var(--accent), 0 0 24px 6px rgba(130,227,255,.55); }
+  .tray.flash-yellow{ box-shadow: 0 0 0 2px var(--accent-2), 0 0 24px 10px rgba(255,224,130,.9); }
+  .stone{ box-shadow: inset 0 0 6px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.35), 0 0 0 2px rgba(0,0,0,.5); }
+  .stone.black{ background: radial-gradient(circle at 35% 35%, #535a63 0%, #2b2f36 45%, #11151a 100%); }
+  #toast{
+    top: 88px;
+    background: linear-gradient(180deg, rgba(16,18,26,.95), rgba(16,18,26,.85));
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 8px 28px rgba(0,0,0,.45);
+  }
+  /* Controls: range input harmonized */
+  input[type="range"]{
+    accent-color: var(--accent);
+    filter: drop-shadow(0 0 0.25rem rgba(130,227,255,.35));
+  }
+  /* Mobile polish */
+  @media (max-width:700px){
+    .dice{ width:44px; height:44px; }
+    .pip{ width:8px; height:8px; }
+    .tray{ width:112px; height:112px; }
+  }
+</style>
+
+</head>
+<body>
+<div id="topbar">
+  <select id="mode" title="Game Mode">
+    <option value="hvh" selected>👤 vs 👤 (Human vs Human)</option>
+    <option value="hvb_black">👤 vs 🤖 (AI plays Black)</option>
+    <option value="hvb_white">👤 vs 🤖 (AI plays White)</option>
+    
+  </select>
+  <label style="display:flex;align-items:center;gap:6px;">
+    ⏱️ AI Delay
+    <input id="ai-delay" type="range" min="0" max="800" step="50" value="300">
+  </label>
+  <button id="btn-sound">🔈 Sound: On</button>
+  <button id="btn-restart">⟲ Restart</button>
+</div>
+
+<div id="dice-container">
+  <button id="btn-roll" onclick="rollDice()">🎲 Roll Dice</button>
+  <div class="dice-visual">
+    <div class="dice" id="dice1"></div>
+    <div class="dice" id="dice2"></div>
+  </div>
+  <div id="dice-output" style="margin-top:6px;">– / –</div>
+</div>
+
+<div id="turn-indicator-wrap">
+  <div id="turn-indicator" class="turn-white">White</div>
+</div>
+
+<div id="wrap">
+  <canvas id="board" width="900" height="540"></canvas>
+  <div id="side">
+    <div id="tray-white" class="tray" role="button" aria-label="White bear-off tray">
+      <h3>White Off</h3>
+      <div class="stone"></div>
+      <div class="count" id="count-white">0</div>
+    </div>
+    <div id="tray-black" class="tray" role="button" aria-label="Black bear-off tray">
+      <h3>Black Off</h3>
+      <div class="stone black"></div>
+      <div class="count" id="count-black">0</div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" aria-live="polite"></div>
+
+<script>
+/* ===== Config ===== */
+const HINT_UNDERLINE_THICKNESS = 2;
+const HINT_COLOR               = "rgba(0,255,255,0.75)";
+const SELECT_FILL              = "rgba(255,255,0,0.35)";
+const SELECT_STROKE            = "rgba(255,255,0,0.9)";
+const BEAROFF_SELECT_FILL      = "rgba(255, 235, 59, 0.35)"; // yellow
+const BEAROFF_SELECT_STROKE    = "rgba(255, 235, 59, 0.95)";
+const WATCHDOG_INTERVAL_MS     = 300;
+const WATCHDOG_STALL_MS        = 2200;
+
+/* ===== Canvas & Board ===== */
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+const w = canvas.width, h = canvas.height;
+const triangleW = w / 13;
+const triangleH = h / 2 - 24;
+const colors = ["#6d4c41", "#a1887f"];
+const pointRadius = 18;
+const pieceGap = 40;
+
+/* ===== Points ===== */
+const points = [];
+for (let i=0;i<24;i++) {
+  const up = i >= 12;
+  const pos = up ? i - 12 : i;
+  const col = up ? pos : 11 - pos;
+  const x = triangleW * (col + (col >= 6 ? 1 : 0));
+  const y = up ? 24 : h - 24;
+  points[i] = { index:i, x:x + triangleW/2, y, up, stack:[] };
+}
+
+/* ===== Game State ===== */
+let currentPlayer = Math.random() < 0.5 ? "#fff" : "#000";
+let dice = [];
+let selectedPoint = null;
+let possibleMoves = [];
+let hintTargets = new Set();
+let lastProgress = Date.now();
+let gameOver = false;
+let soundEnabled = true;
+
+/* bear-off click highlight state */
+let bearOffSelectedIndex = null;     // which triangle is highlighted in yellow (bear-off intent)
+let trayFlash = null;                // "white" | "black" | null
+
+const bar = { "#fff": [], "#000": [] };
+const borneOff = { "#fff": 0, "#000": 0 };
+
+/* ===== DOM ===== */
+const trayW = document.getElementById("tray-white");
+const trayB = document.getElementById("tray-black");
+const countW = document.getElementById("count-white");
+const countB = document.getElementById("count-black");
+const btnSound = document.getElementById("btn-sound");
+const btnRestart = document.getElementById("btn-restart");
+const btnRoll = document.getElementById("btn-roll");
+const turnIndicator = document.getElementById("turn-indicator");
+
+function setTurnIndicator() {
+  const isWhite = currentPlayer === "#fff";
+  turnIndicator.textContent = isWhite ? "White" : "Black";
+  turnIndicator.classList.toggle("turn-white", isWhite);
+  turnIndicator.classList.toggle("turn-black", !isWhite);
+}
+
+/* ===== UI Helpers ===== */
+function showToast(text) {
+  const el = document.getElementById("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  setTimeout(()=>el.classList.remove("show"), 1400);
+}
+function updateDiceUI() {
+  const out = document.getElementById("dice-output");
+  out.textContent = dice.length ? dice.join(" / ") : "– / –";
+  const map = {1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8]};
+  function renderDie(id, val) {
+    const die = document.getElementById(id);
+    die.innerHTML = "";
+    if (!val) return;
+    for (let i=0;i<9;i++){ const dot=document.createElement("div"); if(map[val].includes(i)) dot.className="pip"; die.appendChild(dot); }
+  }
+  renderDie("dice1", dice[0]); renderDie("dice2", dice[1]);
+}
+function forcePass(reason="No legal moves."){
+  if (gameOver) return;
+  const next=currentPlayer==="#fff"?"Black":"White";
+  showToast(`${reason} Turn passes to ${next}.`);
+  dice=[]; updateDiceUI(); selectedPoint=null; possibleMoves=[];
+  bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+  currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+  setTurnIndicator();
+  document.querySelector("#dice-container button").classList.add("highlight");
+  computeHints(); updateTrayHighlight(); redraw(); lastProgress=Date.now();
+}
+function toggleSound(){
+  soundEnabled = !soundEnabled;
+  btnSound.textContent = soundEnabled ? "🔈 Sound: On" : "🔇 Sound: Off";
+}
+btnSound.addEventListener("click", toggleSound);
+
+/* ===== Init/Restart ===== */
+function initPieces() {
+  points.forEach(p => p.stack = []);
+  points[0].stack.push({color:"#fff"}, {color:"#fff"});
+  for (let i=0;i<5;i++) points[5].stack.push({color:"#000"});
+  for (let i=0;i<3;i++) points[7].stack.push({color:"#000"});
+  for (let i=0;i<5;i++) points[11].stack.push({color:"#fff"});
+  for (let i=0;i<5;i++) points[12].stack.push({color:"#000"});
+  for (let i=0;i<3;i++) points[16].stack.push({color:"#fff"});
+  for (let i=0;i<5;i++) points[18].stack.push({color:"#fff"});
+  for (let i=0;i<2;i++) points[23].stack.push({color:"#000"});
+}
+function restartGame() {
+  gameOver = false;
+  dice = []; selectedPoint=null; possibleMoves=[]; hintTargets.clear();
+  bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+  bar["#fff"] = []; bar["#000"] = [];
+  borneOff["#fff"] = 0; borneOff["#000"] = 0;
+  currentPlayer = Math.random() < 0.5 ? "#fff" : "#000";
+  setTurnIndicator();
+  initPieces(); updateDiceUI(); updateTrayDOM(); computeHints(); updateTrayHighlight(); redraw();
+  document.querySelector("#dice-container button").classList.add("highlight");
+  lastProgress = Date.now();
+}
+btnRestart.addEventListener("click", restartGame);
+
+/* ===== Drawing ===== */
+function drawBoard() {
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle="#8d6e63"; ctx.fillRect(w/2 - 34, 0, 68, h);
+  for (let i=0;i<24;i++) {
+    const p=points[i], x=p.x-triangleW/2, y=p.up?0:h, dir=p.up?1:-1;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+triangleW,y); ctx.lineTo(x+triangleW/2,y+dir*triangleH); ctx.closePath();
+    ctx.fillStyle=colors[i%2]; ctx.fill();
+  }
+}
+function drawStone(x,y,color){
+  const g=ctx.createRadialGradient(x-5,y-5,5,x,y,pointRadius);
+  g.addColorStop(0,color==="#fff"?"#eee":"#555"); g.addColorStop(1,color);
+  ctx.beginPath(); ctx.arc(x,y,pointRadius,0,2*Math.PI); ctx.fillStyle=g; ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle="#222"; ctx.stroke();
+}
+function drawStacks(){
+  points.forEach(p=>{
+    const n=p.stack.length, drawN=Math.min(n,5);
+    for(let i=0;i<drawN;i++){
+      const sy=p.up? p.y+i*pieceGap : p.y - i*pieceGap;
+      drawStone(p.x,sy,p.stack[i].color);
+    }
+    if(n>5){
+      const bx=p.x + (triangleW/2 - 14);
+      const by=p.up ? (p.y + drawN*pieceGap - 18) : (p.y - drawN*pieceGap + 22);
+      ctx.fillStyle="rgba(0,0,0,.7)";
+      ctx.beginPath(); const r=8; ctx.moveTo(bx-14+r,by-14);
+      ctx.arcTo(bx+14,by-14,bx+14,by+14,r);
+      ctx.arcTo(bx+14,by+14,bx-14,by+14,r);
+      ctx.arcTo(bx-14,by+14,bx-14,by-14,r);
+      ctx.arcTo(bx-14,by-14,bx+14,by-14,r);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle="#fff"; ctx.font="bold 14px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(String(n),bx,by);
+    }
+  });
+}
+function drawBar(){
+  const size=pointRadius, xMid=w/2-10, midY=h/2;
+  if(bar["#fff"].length>0){ drawStone(xMid,midY,"#fff"); ctx.fillStyle="#fff"; ctx.font="bold 18px system-ui"; ctx.textAlign="left"; ctx.fillText(bar["#fff"].length,xMid+size+6,midY+6); }
+  if(bar["#000"].length>0){ drawStone(xMid,midY,"#000"); ctx.fillStyle="#fff"; ctx.font="bold 18px system-ui"; ctx.textAlign="left"; ctx.fillText(bar["#000"].length,xMid+size+6,midY+6); }
+}
+function drawUnderlineHints(indices){
+  ctx.save();
+  ctx.lineWidth=HINT_UNDERLINE_THICKNESS; ctx.strokeStyle=HINT_COLOR; ctx.lineCap="round";
+  indices.forEach(idx=>{
+    const p=points[idx]; const y = p.up ? 0 : h; const x1=p.x-triangleW/2, x2=p.x+triangleW/2;
+    ctx.beginPath(); ctx.moveTo(x1,y); ctx.lineTo(x2,y); ctx.stroke();
+  });
+  ctx.restore();
+}
+function drawTriangleHighlights(indices, fill=SELECT_FILL, stroke=SELECT_STROKE){
+  ctx.save();
+  indices.forEach(idx=>{
+    const p=points[idx], x=p.x-triangleW/2, y=p.up?0:h, dir=p.up?1:-1;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+triangleW,y); ctx.lineTo(x+triangleW/2,y+dir*triangleH); ctx.closePath();
+    ctx.fillStyle=fill; ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle=stroke; ctx.stroke();
+  });
+  ctx.restore();
+}
+function redraw(){
+  drawBoard();
+  if(hintTargets.size>0) drawUnderlineHints([...hintTargets]);
+  if(possibleMoves.length>0) drawTriangleHighlights(possibleMoves);
+  if(bearOffSelectedIndex!==null) drawTriangleHighlights([bearOffSelectedIndex], BEAROFF_SELECT_FILL, BEAROFF_SELECT_STROKE);
+  drawStacks();
+  drawBar();
+  updateTrayDOM();
+}
+
+/* ===== Trays (DOM) ===== */
+function updateTrayDOM(){
+  countW.textContent = String(borneOff["#fff"]);
+  countB.textContent = String(borneOff["#000"]);
+  trayW.style.visibility = "visible";
+  trayB.style.visibility = "visible";
+}
+function applyTrayClasses(){
+  trayW.classList.remove("highlight-cyan","flash-yellow");
+  trayB.classList.remove("highlight-cyan","flash-yellow");
+  if(dice.length===0 || gameOver) return;
+  // cyan = generic "bear-off possible" hint, yellow = click-intent from a selected field
+  if(isHomeReady(currentPlayer) && anyBearOffAvailable()){
+    if(currentPlayer==="#fff") trayW.classList.add("highlight-cyan");
+    else trayB.classList.add("highlight-cyan");
+  }
+  if(trayFlash==="white") trayW.classList.add("flash-yellow");
+  if(trayFlash==="black") trayB.classList.add("flash-yellow");
+}
+function updateTrayHighlight(){
+  // just recompute classes
+  applyTrayClasses();
+}
+
+/* ===== Rules (Bear‑Off Highest Point) ===== */
+function getBarEntryMoves(){
+  const moves=[]; const entry = currentPlayer==="#fff" ? [0,1,2,3,4,5] : [23,22,21,20,19,18];
+  dice.forEach(d=>{
+    const target=currentPlayer==="#fff" ? d-1 : 24-d;
+    if(!entry.includes(target)) return;
+    const dest=points[target]; const enemy=currentPlayer==="#fff"?"#000":"#fff";
+    const len=dest.stack.length, top=len?dest.stack[len-1].color:null;
+    if(len===0 || top===currentPlayer || (len===1 && top===enemy)) moves.push(target);
+  });
+  return [...new Set(moves)];
+}
+function canMove(from,to){
+  if(currentPlayer==="#fff" && to<=from) return false;
+  if(currentPlayer==="#000" && to>=from) return false;
+  const dist=Math.abs(to-from); if(!dice.includes(dist)) return false;
+  const dest=points[to], enemy=currentPlayer==="#fff"?"#000":"#fff";
+  const len=dest.stack.length, top=len?dest.stack[len-1].color:null;
+  if(len>=2 && top===enemy) return false;
+  return true;
+}
+function getPossibleMoves(from){
+  const m=[];
+  dice.forEach(d=>{ const to=currentPlayer==="#fff"?from+d:from-d; if(to>=0&&to<24&&canMove(from,to)) m.push(to); });
+  return m;
+}
+function isHomeReady(color){
+  if(color==="#fff"){
+    for(let i=0;i<24;i++){ const st=points[i].stack; for(const s of st){ if(s.color==="#fff" && i<18) return false; } }
+    return bar["#fff"].length===0;
+  } else {
+    for(let i=0;i<24;i++){ const st=points[i].stack; for(const s of st){ if(s.color==="#000" && i>5) return false; } }
+    return bar["#000"].length===0;
+  }
+}
+function highestOccupiedHomeIndex(color){
+  if(color==="#fff"){
+    for(let i=18;i<=23;i++){
+      const st=points[i].stack; if(st.length && st[st.length-1].color==="#fff") return i;
+    }
+    return -1;
+  } else {
+    for(let i=5;i>=0;i--){
+      const st=points[i].stack; if(st.length && st[st.length-1].color==="#000") return i;
+    }
+    return -1;
+  }
+}
+function hasHigherStrict(color, from){
+  if(color==="#fff"){
+    for(let i=18;i<from;i++){ const st=points[i].stack; if(st.length && st[st.length-1].color==="#fff") return true; }
+    return false;
+  } else {
+    for(let i=from+1;i<=5;i++){ const st=points[i].stack; if(st.length && st[st.length-1].color==="#000") return true; }
+    return false;
+  }
+}
+function bearOffDistance(index, color){ return color==="#fff" ? (24 - index) : (index + 1); }
+function canBearOffFrom(index){
+  const color=currentPlayer;
+  if(!isHomeReady(color)) return false;
+  const p=points[index];
+  if(p.stack.length===0 || p.stack[p.stack.length-1].color!==color) return false;
+  const dNeeded=bearOffDistance(index, color);
+  if(dice.includes(dNeeded)) return true; // exact die
+  const larger = dice.some(d=> d>dNeeded);
+  if(!larger) return false;
+  if(hasHigherStrict(color, index)) return false; // higher occupied exists → must use it
+  const hi = highestOccupiedHomeIndex(color);
+  return index === hi;
+}
+function anyBearOffAvailable(){
+  if(!isHomeReady(currentPlayer)) return false;
+  for(let i=0;i<24;i++){
+    const st=points[i].stack;
+    if(st.length && st[st.length-1].color===currentPlayer){
+      if(canBearOffFrom(i)) return true;
+    }
+  }
+  return false;
+}
+
+/* ===== Moves ===== */
+function playMoveSound(){
+  if(!soundEnabled) return;
+  const actx=new (window.AudioContext||window.webkitAudioContext)(), osc=actx.createOscillator(), gain=actx.createGain();
+  osc.type='sine'; osc.frequency.setValueAtTime(400,actx.currentTime); osc.frequency.exponentialRampToValueAtTime(150,actx.currentTime+.1);
+  gain.gain.setValueAtTime(.3,actx.currentTime); gain.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.1);
+  osc.connect(gain); gain.connect(actx.destination); osc.start(); osc.stop(actx.currentTime+.1);
+}
+function useDie(value){ const k=dice.indexOf(value); if(k===-1) return false; dice.splice(k,1); return true; }
+function moveOne(from,to){
+  const src=points[from], dest=points[to], enemy=currentPlayer==="#fff"?"#000":"#fff";
+  const stone=src.stack.pop();
+  if(dest.stack.length===1 && dest.stack[0].color===enemy){ const beaten=dest.stack.pop(); bar[enemy].push(beaten); }
+  dest.stack.push(stone); playMoveSound(); lastProgress=Date.now();
+}
+function enterFromBar(to){
+  const dUsed=currentPlayer==="#fff" ? (to+1) : (24-to);
+  if(!useDie(dUsed)) return false;
+  const enemy=currentPlayer==="#fff"?"#000":"#fff"; const dest=points[to];
+  const stone=bar[currentPlayer].pop();
+  if(dest.stack.length===1 && dest.stack[0].color===enemy){ const beaten=dest.stack.pop(); bar[enemy].push(beaten); }
+  dest.stack.push(stone); playMoveSound(); lastProgress=Date.now();
+  return true;
+}
+function performBearOff(index){
+  const color=currentPlayer;
+  const dNeeded=bearOffDistance(index, color);
+  if(dice.includes(dNeeded)){
+    dice.splice(dice.indexOf(dNeeded),1);
+  } else {
+    if(hasHigherStrict(color, index)) return false;
+    const hi = highestOccupiedHomeIndex(color);
+    if(hi!==index) return false;
+    const larger = dice.filter(d=> d>dNeeded).sort((a,b)=>a-b);
+    if(larger.length===0) return false;
+    dice.splice(dice.indexOf(larger[0]),1);
+  }
+  points[index].stack.pop();
+  borneOff[color]++;
+  playMoveSound();
+  if(borneOff[color] >= 15){
+    showToast((color==="#fff"?"White":"Black") + " wins! 🎉");
+    dice=[]; updateDiceUI(); gameOver = true;
+    btnRoll.classList.add("highlight");
+  }
+  lastProgress=Date.now();
+  return true;
+}
+
+/* ===== Logic-only scans for watchdog ===== */
+function computeAllLegalTargetsFor(player) {
+  const out = { barEntries: [], fromTo: new Map(), bearOffFrom: [] };
+  const saved = currentPlayer;
+  currentPlayer = player;
+  try {
+    if (bar[player].length > 0) {
+      out.barEntries = getBarEntryMoves();
+      return out;
+    }
+    for (let i = 0; i < 24; i++) {
+      const p = points[i];
+      if (p.stack.length > 0 && p.stack[p.stack.length - 1].color === player) {
+        const moves = getPossibleMoves(i);
+        if (moves.length) out.fromTo.set(i, moves);
+      }
+    }
+    if (isHomeReady(player)) {
+      for (let i = 0; i < 24; i++) {
+        const st = points[i].stack;
+        if (st.length && st[st.length - 1].color === player && canBearOffFrom(i)) {
+          out.bearOffFrom.push(i);
+        }
+      }
+    }
+    return out;
+  } finally {
+    currentPlayer = saved;
+  }
+}
+function autoSelectBestFocus() {
+  if (bar[currentPlayer].length > 0) {
+    const entries = getBarEntryMoves();
+    if (entries.length) { selectedPoint = "bar"; possibleMoves = entries; return true; }
+    return false;
+  }
+  for (let i = 0; i < 24; i++) {
+    const p = points[i];
+    if (p.stack.length > 0 && p.stack[p.stack.length - 1].color === currentPlayer) {
+      const m = getPossibleMoves(i);
+      if (m.length) { selectedPoint = p; possibleMoves = m; return true; }
+    }
+  }
+  if (isHomeReady(currentPlayer)) {
+    const hi = highestOccupiedHomeIndex(currentPlayer);
+    if (hi >= 0 && canBearOffFrom(hi)) {
+      selectedPoint = points[hi];
+      possibleMoves = [];
+      bearOffSelectedIndex = hi;
+      trayFlash = (currentPlayer==="#fff") ? "white" : "black";
+      applyTrayClasses();
+      return true;
+    }
+  }
+  return false;
+}
+function scanUiSanityAndHeal() {
+  if (gameOver) return;
+  if(dice.length === 0) { applyTrayClasses(); return; }
+  const logical = computeAllLegalTargetsFor(currentPlayer);
+  const hasLogicalMoves =
+    (logical.barEntries && logical.barEntries.length > 0) ||
+    (logical.fromTo && logical.fromTo.size > 0) ||
+    (logical.bearOffFrom && logical.bearOffFrom.length > 0);
+  const uiHasTargets =
+    (selectedPoint === "bar" && possibleMoves.length > 0) ||
+    (selectedPoint && Array.isArray(possibleMoves) && possibleMoves.length > 0) ||
+    (hintTargets && hintTargets.size > 0) ||
+    (bearOffSelectedIndex!==null);
+  if (hasLogicalMoves && !uiHasTargets) {
+    computeHints();
+    if (hintTargets.size === 0 && (!selectedPoint || possibleMoves.length === 0)) {
+      if (!autoSelectBestFocus()) {
+        return forcePass("No legal moves found (recovered).");
+      }
+    }
+    redraw();
+    lastProgress = Date.now();
+    return;
+  }
+  if (!hasLogicalMoves && uiHasTargets) {
+    return forcePass("No legal moves (UI corrected).");
+  }
+  applyTrayClasses();
+}
+
+/* ===== Flow ===== */
+function computeHints(){
+  hintTargets.clear();
+  if(dice.length===0 || gameOver) { applyTrayClasses(); return; }
+  if(bar[currentPlayer].length>0){ getBarEntryMoves().forEach(i=>hintTargets.add(i)); applyTrayClasses(); return; }
+  for(let i=0;i<24;i++){
+    const p=points[i];
+    if(p.stack.length>0 && p.stack[p.stack.length-1].color===currentPlayer){
+      getPossibleMoves(i).forEach(j=>hintTargets.add(j));
+    }
+  }
+  applyTrayClasses();
+}
+function finishOrContinueTurn(){
+  updateDiceUI();
+  selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+  computeHints();
+  if(dice.length===0 || gameOver){
+    document.querySelector("#dice-container button").classList.add("highlight");
+    if(!gameOver){
+      currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+      setTurnIndicator();
+    }
+    lastProgress=Date.now(); redraw(); scanUiSanityAndHeal(); return;
+  }
+  if(bar[currentPlayer].length>0){
+    const entries=getBarEntryMoves();
+    if(entries.length===0){ return forcePass("No legal bar entries."); }
+    selectedPoint="bar"; possibleMoves=entries; redraw(); scanUiSanityAndHeal(); return;
+  }
+  if(!hasAnyMove()){ return forcePass("No legal moves."); }
+  redraw(); scanUiSanityAndHeal();
+}
+
+/* ===== Input (Canvas) ===== */
+
+// --- Enlarged triangle hit-test (visual unchanged, tap area a bit wider) ---
+function hitTriangle(idx, mx, my, expandPx){
+  const p = points[idx];
+  const xL = p.x - triangleW/2 - expandPx;
+  const xR = p.x + triangleW/2 + expandPx;
+  const yB = p.up ? 0 : h;
+  const dir = p.up ? 1 : -1;
+  const tipY = yB + dir * (triangleH + expandPx); // extend tip slightly
+  ctx.beginPath();
+  ctx.moveTo(xL, yB);
+  ctx.lineTo(xR, yB);
+  ctx.lineTo(p.x, tipY);
+  ctx.closePath();
+  return ctx.isPointInPath(mx, my);
+}
+
+
+// --- Map client (CSS pixel) coordinates to canvas internal coordinates ---
+function toCanvasXY(evt){
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width  / rect.width;
+  const sy = canvas.height / rect.height;
+  const x = (evt.clientX - rect.left) * sx;
+  const y = (evt.clientY - rect.top)  * sy;
+  return {x, y};
+}
+
+canvas.addEventListener("click", (e)=>{
+  if (gameOver) return;
+  const pXY = toCanvasXY(e); const mx = pXY.x, my = pXY.y;
+  if(dice.length===0){ document.querySelector("#dice-container button").classList.add("highlight"); return; }
+
+  // Click on bar selection area (when returning from bar)
+  if(selectedPoint==="bar"){
+    for(const move of possibleMoves){
+      if (hitTriangle(move, mx, my, 8)) {
+        if(!enterFromBar(move)) return;
+        updateDiceUI(); selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+        computeHints();
+        finishOrContinueTurn(); scanUiSanityAndHeal();
+        return;
+      }
+    }
+    return;
+  }
+  // If there are stones on bar, you must enter from bar
+  if(bar[currentPlayer].length>0){
+    const entries=getBarEntryMoves();
+    if(entries.length===0){ return forcePass("No legal bar entries."); }
+    selectedPoint="bar"; possibleMoves=entries; redraw(); scanUiSanityAndHeal(); return;
+  }
+
+  if(selectedPoint===null){
+    for(const p of points){
+      if(p.stack.length>0 && p.stack[p.stack.length-1].color===currentPlayer){
+        if (hitTriangle(p.index, mx, my, 8)) {
+          selectedPoint=p;
+          possibleMoves=getPossibleMoves(p.index);
+          // Bear-off click intention
+          if(isHomeReady(currentPlayer) && canBearOffFrom(p.index)){
+            bearOffSelectedIndex = p.index;
+            trayFlash = (currentPlayer==="#fff") ? "white" : "black";
+          } else {
+            bearOffSelectedIndex = null;
+            trayFlash = null;
+          }
+          applyTrayClasses();
+          computeHints(); redraw(); scanUiSanityAndHeal(); return;
+        }
+      }
+    }
+    return;
+  }
+
+  // Try moving to one of the highlighted target triangles
+  for(const move of possibleMoves){
+    if (hitTriangle(move, mx, my, 8)) {
+      moveOne(selectedPoint.index, move);
+      const dist=Math.abs(move - selectedPoint.index); useDie(dist);
+      updateDiceUI(); selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+      computeHints();
+      finishOrContinueTurn(); scanUiSanityAndHeal();
+      return;
+    }
+  }
+
+  // Clicked somewhere else → deselect
+  selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+  computeHints(); redraw(); scanUiSanityAndHeal();
+});
+
+/* ===== Input (DOM Trays) ===== */
+function handleTrayClick(color){
+  if(currentPlayer!==color || dice.length===0 || gameOver) return;
+  if(!isHomeReady(color)) return;
+  if(!selectedPoint){
+    const hi=highestOccupiedHomeIndex(color);
+    if(hi>=0 && canBearOffFrom(hi)) { selectedPoint=points[hi]; bearOffSelectedIndex=hi; trayFlash = (color==="#fff") ? "white" : "black"; applyTrayClasses(); redraw(); }
+  }
+  if(selectedPoint && canBearOffFrom(selectedPoint.index)){
+    performBearOff(selectedPoint.index);
+    updateDiceUI(); selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+    computeHints(); finishOrContinueTurn(); scanUiSanityAndHeal();
+  }
+}
+trayW.addEventListener("click", ()=>handleTrayClick("#fff"));
+trayB.addEventListener("click", ()=>handleTrayClick("#000"));
+
+/* ===== Dice ===== */
+function playDiceSound(){
+  if(!soundEnabled) return;
+  const actx=new (window.AudioContext||window.webkitAudioContext)();
+  for(let i=0;i<6;i++){ const t=actx.currentTime+i*.05+Math.random()*.03; const o=actx.createOscillator(), g=actx.createGain();
+    o.type='square'; o.frequency.setValueAtTime(300+Math.random()*100,t); g.gain.setValueAtTime(.2,t); g.gain.exponentialRampToValueAtTime(.001,t+.02);
+    o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+.03);
+  }
+  const N=512, noise=actx.createBufferSource(), buf=actx.createBuffer(1,N,actx.sampleRate); const data=buf.getChannelData(0);
+  for(let i=0;i<N;i++) data[i]=(Math.random()*2-1)*.4; noise.buffer=buf; const ng=actx.createGain();
+  ng.gain.setValueAtTime(.3,actx.currentTime); ng.gain.exponentialRampToValueAtTime(.001,actx.currentTime+.1);
+  noise.connect(ng); ng.connect(actx.destination); noise.start();
+}
+function rollDice(){
+  if(gameOver) return;
+  document.querySelector("#dice-container button").classList.remove("highlight");
+  if(dice.length>0) return;
+  playDiceSound();
+  const d1=Math.floor(Math.random()*6)+1, d2=Math.floor(Math.random()*6)+1;
+  dice = d1===d2 ? [d1,d1,d1,d1] : [d1,d2];
+  lastProgress=Date.now();
+  updateDiceUI();
+  setTurnIndicator();
+
+  selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+
+  if(bar[currentPlayer].length>0){
+    const entries=getBarEntryMoves();
+    if(entries.length===0){ return forcePass("No legal bar entries."); }
+    selectedPoint="bar"; possibleMoves=entries;
+  } else if(!hasAnyMove()){
+    return forcePass("No legal moves.");
+  }
+  computeHints(); updateTrayHighlight(); redraw(); scanUiSanityAndHeal();
+}
+
+/* ===== Watchdog ===== */
+function watchdogTick(){
+  if (gameOver) return;
+  if(dice.length>0 && (Date.now()-lastProgress > WATCHDOG_STALL_MS)){
+    if(bar[currentPlayer].length>0){
+      const entries=getBarEntryMoves();
+      if(entries.length===0){ return forcePass("No legal bar entries."); }
+      selectedPoint="bar"; possibleMoves=entries; computeHints(); redraw(); lastProgress=Date.now();
+    } else if(!hasAnyMove()){
+      return forcePass("No legal moves.");
+    } else {
+      scanUiSanityAndHeal();
+      lastProgress=Date.now();
+    }
+  }
+  if(dice.length===0){
+    const btn=document.querySelector("#dice-container button");
+    if(btn && !btn.classList.contains("highlight")) btn.classList.add("highlight");
+  }
+  scanUiSanityAndHeal();
+  updateTrayHighlight();
+}
+
+/* ===== Helpers ===== */
+function hasAnyMove(){
+  if(bar[currentPlayer].length>0){ return getBarEntryMoves().length>0; }
+  for(let i=0;i<24;i++){
+    const p=points[i];
+    if(p.stack.length>0 && p.stack[p.stack.length-1].color===currentPlayer){
+      if(getPossibleMoves(i).length>0) return true;
+    }
+  }
+  if(anyBearOffAvailable()) return true;
+  return false;
+}
+
+/* ===== Boot ===== */
+initPieces();
+updateDiceUI();
+computeHints();
+updateTrayHighlight();
+redraw();
+document.querySelector("#dice-container button").classList.add("highlight");
+document.addEventListener("contextmenu", e => e.preventDefault());
+setTurnIndicator();
+setInterval(watchdogTick, 300);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) watchdogTick(); });
+
+/* ===== Basic AI Module (Greedy Heuristic, Step-by-step) ===== */
+let aiConfig = { playsWhite:false, playsBlack:true, delayMs:300, running:false };
+
+const delay = (ms)=> new Promise(res=> setTimeout(res, ms));
+
+function setModeFromSelect(){
+  const val = document.getElementById("mode").value;
+  if(val==="hvb_black"){ aiConfig.playsWhite=false; aiConfig.playsBlack=true; }
+  else if(val==="hvb_white"){ aiConfig.playsWhite=true; aiConfig.playsBlack=false; }
+  else { aiConfig.playsWhite=false; aiConfig.playsBlack=false; }
+}
+document.getElementById("mode").addEventListener("change", ()=>{ setModeFromSelect(); });
+document.getElementById("ai-delay").addEventListener("input", (e)=>{ aiConfig.delayMs = parseInt(e.target.value,10)||0; });
+
+setModeFromSelect();
+aiConfig.delayMs = parseInt(document.getElementById("ai-delay").value, 10) || 300;
+
+function aiShouldPlayNow(){
+  if(gameOver) return false;
+  if(dice.length===0) return false;
+  if(currentPlayer==="#fff" && aiConfig.playsWhite) return true;
+  if(currentPlayer==="#000" && aiConfig.playsBlack) return true;
+  return false;
+}
+
+// Heuristic scoring for a move (from -> to). Higher is better.
+function scoreMove(from, to, color){
+  let score = 0;
+  const enemy = (color==="#fff") ? "#000" : "#fff";
+  const src = points[from], dest = points[to];
+  const dist = Math.abs(to-from);
+
+  // prefer bearing in / advancing toward home
+  score += (color==="#fff" ? (to - from) : (from - to)) * 3;
+
+  // hitting blot?
+  if(dest.stack.length===1 && dest.stack[0].color===enemy) score += 50;
+
+  // making a point (landing on own single) becomes 2+
+  if(dest.stack.length>=1 && dest.stack[dest.stack.length-1].color===color) score += 8;
+
+  // leaving a blot at src (after move) – penalty if >0 remain and becomes single
+  const srcCountAfter = src.stack.length - 1;
+  if(srcCountAfter===1) score -= 10;
+  if(srcCountAfter===0) score -= 1; // slightly worse to empty a safe anchor if not necessary
+
+  // get closer to bearing off (pip reduction proxy)
+  score += (color==="#fff" ? to : (23-to)) * 0.1;
+
+  // prefer moves inside home board when home-ready
+  if(isHomeReady(color)){
+    const inHome = (color==="#fff") ? (to>=18 && to<=23) : (to>=0 && to<=5);
+    if(inHome) score += 6;
+  }
+  return score;
+}
+
+// Choose a bar entry target
+function chooseBarEntryTarget(color, entries){
+  const enemy = (color==="#fff") ? "#000" : "#fff";
+  // 1) hit if possible
+  for(const t of entries){
+    const d=points[t];
+    if(d.stack.length===1 && d.stack[0].color===enemy) return t;
+  }
+  // 2) maximize progress into board
+  if(color==="#fff") return Math.max(...entries);
+  return Math.min(...entries);
+}
+
+// Choose one regular move (greedy) among all from->to possibilities
+function chooseGreedyMove(color){
+  let best = null, bestScore = -1e9;
+  for(let i=0;i<24;i++){
+    const p=points[i];
+    if(p.stack.length>0 && p.stack[p.stack.length-1].color===color){
+      const moves = getPossibleMoves(i);
+      for(const to of moves){
+        const sc = scoreMove(i, to, color);
+        if(sc>bestScore){ bestScore=sc; best={from:i,to}; }
+      }
+    }
+  }
+  return best;
+}
+
+async function aiPlayTurn(){
+  if(aiConfig.running) return;
+  aiConfig.running = true;
+  try{
+    // Ensure hints/UI are ready
+    computeHints(); redraw();
+
+    while(!gameOver && dice.length>0 && currentPlayer && aiShouldPlayNow()){
+      await delay(aiConfig.delayMs);
+
+      // If any on bar, must enter
+      if(bar[currentPlayer].length>0){
+        const entries = getBarEntryMoves();
+        if(entries.length===0){ forcePass("AI: No legal bar entries."); break; }
+        const t = chooseBarEntryTarget(currentPlayer, entries);
+        enterFromBar(t);
+        updateDiceUI();
+        computeHints(); redraw();
+        continue;
+      }
+
+      // Bear-off if allowed
+      if(isHomeReady(currentPlayer) && anyBearOffAvailable()){
+        // try exact bear-off first; else from highest
+        let did = false;
+        // Find all bear-offable indices
+        const opts = [];
+        for(let i=0;i<24;i++){
+          const st=points[i].stack;
+          if(st.length && st[st.length-1].color===currentPlayer && canBearOffFrom(i)) opts.push(i);
+        }
+        // prefer highest for white, lowest for black
+        if(opts.length){
+          const pick = (currentPlayer==="#fff") ? Math.max(...opts) : Math.min(...opts);
+          // Visual select
+          selectedPoint = points[pick];
+          bearOffSelectedIndex = pick;
+          trayFlash = (currentPlayer==="#fff")?"white":"black";
+          applyTrayClasses(); redraw();
+          await delay(Math.min(200, aiConfig.delayMs));
+          performBearOff(pick);
+          updateDiceUI();
+          selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+          computeHints(); redraw();
+          did = true;
+        }
+        if(did) continue;
+      }
+
+      // Otherwise choose greedy move
+      const mv = chooseGreedyMove(currentPlayer);
+      if(!mv){ forcePass("AI: No legal moves."); break; }
+      // Execute
+      moveOne(mv.from, mv.to);
+      const dist = Math.abs(mv.to - mv.from);
+      useDie(dist);
+      updateDiceUI();
+      selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+      computeHints(); redraw();
+    }
+
+    // Hand over if dice finished
+    if(!gameOver && dice.length===0){
+      document.querySelector("#dice-container button").classList.add("highlight");
+      currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+      setTurnIndicator();
+      computeHints(); redraw();
+      // If it's still AI (e.g., doubles exhausted), it will roll on next user click
+    }
+  } finally {
+    aiConfig.running = false;
+  }
+}
+
+
+// Auto-roll for AI when it's their turn and no dice are present
+function maybeAIRoll(){
+  if(aiShouldPlayNow() && dice.length===0 && !aiConfig.running && !gameOver){
+    rollDice();
+  }
+}
+
+// Upgrade watchdog: also trigger auto-roll when needed
+const _origWatchdog2 = watchdogTick;
+watchdogTick = function(){
+  _origWatchdog2();
+  if(gameOver) return;
+  if(aiShouldPlayNow()){
+    if(dice.length===0){
+      maybeAIRoll();
+    } else if(!aiConfig.running){
+      aiPlayTurn();
+    }
+  }
+};
+// Hook into dice roll: if AI's turn after rolling, auto-play
+const _origRollDice = rollDice;
+rollDice = function(){ _origRollDice(); if(aiShouldPlayNow()) { aiPlayTurn(); } };
+
+// Also in watchdog: if it's AI's turn and dice are present but nothing moves, kick it
+const _origWatchdog = watchdogTick;
+watchdogTick = function(){ _origWatchdog(); if(aiShouldPlayNow() && !aiConfig.running){ aiPlayTurn(); } };
+
+
+</script>
+
+<script id="td_learning_addon">
+// === TD(λ) Learning Add‑On (GUI-neutral) =====================================
+(function(){
+  const STORAGE_KEY = 'bg_td_weights_v1';
+  const GAMMA = 0.99;
+  let   ALPHA = 0.02;         // slow decay at game end
+  const LAMBDA = 0.7;
+  const FEAT_COUNT = 16;
+  // Immutable baseline start-weights (never overwritten)
+  const W0 = [0.8, -0.8, -0.7, 0.6, -0.6, 0.5, 0.6, 0.7, 0.9, -0.9, -0.6, 0.4, -0.4, -0.5, 0.4, 0.0];
+
+  function loadDelta(){
+    try{
+      const j = JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
+      if (Array.isArray(j) && j.length===FEAT_COUNT) return j.map(Number);
+    }catch(e){}
+    return Array(FEAT_COUNT).fill(0);
+  }
+  function saveDelta(dW){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(dW)); }catch(e){} }
+  let dW = loadDelta();
+  let E = Array(FEAT_COUNT).fill(0);
+
+  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+  function norm(x,d){ return clamp(x/d, -1, 1); }
+  function enemyOf(c){ return c==="#fff" ? "#000" : "#fff"; }
+
+  function pipCountColor(color, pts, br){
+    let sum=0;
+    for (let i=0;i<24;i++){
+      const st = pts[i];
+      if (!st || !st.length) continue;
+      for (const s of st) if (s.color===color) sum += (color==="#fff") ? (24 - i) : (i + 1);
+    }
+    sum += (br[color] ? br[color].length : 0) * 25;
+    return sum;
+  }
+  function countBlots(color, pts){
+    let c=0;
+    for(let i=0;i<24;i++){
+      const st=pts[i];
+      if(st && st.length===1 && st[0].color===color) c++;
+    }
+    return c;
+  }
+  function madeHomePoints(color, pts){
+    let c=0;
+    if(color==="#fff"){
+      for(let i=18;i<=23;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color==="#fff") c++; }
+    } else {
+      for(let i=0;i<=5;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color==="#000") c++; }
+    }
+    return c;
+  }
+  function primeLen(color, pts){
+    let best=0, run=0;
+    if(color==="#fff"){
+      for(let i=0;i<24;i++){
+        const st=pts[i]; const ok = st && st.length>=2 && st[st.length-1].color==="#fff";
+        run = ok ? run+1 : 0; best = Math.max(best, run);
+      }
+    } else {
+      for(let i=23;i>=0;i--){
+        const st=pts[i]; const ok = st && st.length>=2 && st[st.length-1].color==="#000";
+        run = ok ? run+1 : 0; best = Math.max(best, run);
+      }
+    }
+    return Math.min(6, best);
+  }
+  function blockedEntrySquaresAgainst(color, pts){
+    const enemy = enemyOf(color);
+    let c=0;
+    if(color==="#fff"){
+      for(let i=18;i<=23;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color===enemy) c++; }
+    } else {
+      for(let i=0;i<=5;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color===enemy) c++; }
+    }
+    return c;
+  }
+
+  // --- snapshot shallow state
+  function snapshot(){
+    const pts = new Array(24);
+    for(let i=0;i<24;i++){
+      const st = (points[i] && points[i].stack) ? points[i].stack : [];
+      pts[i] = st.map(s => ({color:s.color}));
+    }
+    return {
+      points: pts,
+      bar: { "#fff": (bar["#fff"]||[]).map(s=>({color:s.color})), "#000": (bar["#000"]||[]).map(s=>({color:s.color})) },
+      borneOff: { "#fff": borneOff["#fff"]||0, "#000": borneOff["#000"]||0 },
+      currentPlayer: currentPlayer
+    };
+  }
+
+  function featuresFor(color, snap){
+    const f = new Array(FEAT_COUNT).fill(0);
+    const pts = snap.points, br = snap.bar, off = snap.borneOff;
+    const me=color, opp=enemyOf(color);
+    let k=0;
+    const pipMe = pipCountColor(me, pts, br);
+    const pipOp = pipCountColor(opp, pts, br);
+    f[k++] = norm(pipOp - pipMe, 200);         // lead (good if positive)
+    f[k++] = norm(pipMe - pipOp, 200);         // behind
+    f[k++] = (br[me].length||0) / 5;
+    f[k++] = (br[opp].length||0) / 5;
+    f[k++] = countBlots(me, pts) / 6;
+    f[k++] = countBlots(opp, pts) / 6;
+    f[k++] = madeHomePoints(me, pts) / 6;
+    f[k++] = primeLen(me, pts) / 6;
+    f[k++] = off[me] / 15;
+    f[k++] = off[opp] / 15;
+    f[k++] = blockedEntrySquaresAgainst(me, pts) / 6;
+    // mild nonlinearities
+    f[k++] = Math.max(0, (pipOp - pipMe)/200);
+    f[k++] = Math.max(0, (pipMe - pipOp)/200);
+    let anchorsOpp=0;
+    if (me==="#fff"){ for(let i=0;i<=5;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===opp) anchorsOpp++; } }
+    else { for(let i=18;i<=23;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===opp) anchorsOpp++; } }
+    f[k++] = anchorsOpp / 3;
+    let anchorsMe=0;
+    if (me==="#fff"){ for(let i=18;i<=23;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===me) anchorsMe++; } }
+    else { for(let i=0;i<=5;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===me) anchorsMe++; } }
+    f[k++] = anchorsMe / 6;
+    return f;
+  }
+  function valueOf(color, snap){
+    const f = featuresFor(color, snap);
+    let v=0; for(let i=0;i<FEAT_COUNT;i++) v += (W0[i] + dW[i]) * f[i];
+    return v;
+  }
+  function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
+
+  // --- TD(λ) with traces
+  let traceOn=false, traceColor=null, prevSnap=null;
+  function traceReset(){ E = Array(FEAT_COUNT).fill(0); }
+  function tdUpdate(prevSnap_, nextSnap_, color, reward){
+    const f = featuresFor(color, prevSnap_);
+    const v  = dot(W, f);
+    const v2 = nextSnap_ ? valueOf(color, nextSnap_) : 0;
+    const delta = reward + GAMMA * v2 - v;
+    for(let i=0;i<FEAT_COUNT;i++){
+      E[i] = GAMMA * LAMBDA * E[i] + f[i];
+      dW[i] += ALPHA * delta * E[i];
+      // light clamp to keep stability
+      if (dW[i] > 3) dW[i]=3; else if (dW[i] < -3) dW[i]=-3;
+    }
+  }
+
+  // --- Apply move to a snapshot (for lookahead scoring)
+  function applyMoveSnap(snap, from, to, color){
+    const pts = snap.points, enemy = enemyOf(color);
+    if (from === -1){
+      const arr = snap.bar[color]; if (!arr || !arr.length) return false;
+      const dest = pts[to];
+      if (dest.length===1 && dest[0].color===enemy){ const beaten = dest.pop(); snap.bar[enemy].push(beaten); }
+      const stone = arr.pop(); dest.push(stone); return true;
+    } else {
+      const src = pts[from], dest = pts[to];
+      if (!src.length || src[src.length-1].color!==color) return false;
+      const stone = src.pop();
+      if (dest.length===1 && dest[0].color===enemy){ const beaten = dest.pop(); snap.bar[enemy].push(beaten); }
+      dest.push(stone); return true;
+    }
+  }
+
+  // --- Hooks: before/after move + game end
+  const _moveOne = window.moveOne;
+  window.moveOne = function(from,to){
+    try{
+      if(!traceOn){ traceOn=true; traceColor=currentPlayer; traceReset(); }
+      prevSnap = snapshot();
+    }catch(e){}
+    const r = _moveOne.apply(this, arguments);
+    try{
+      const nextSnap = snapshot();
+      tdUpdate(prevSnap, nextSnap, traceColor||currentPlayer, 0);
+      prevSnap = nextSnap;
+    }catch(e){}
+    return r;
+  };
+
+  const _enterFromBar = window.enterFromBar;
+  window.enterFromBar = function(to){
+    try{
+      if(!traceOn){ traceOn=true; traceColor=currentPlayer; traceReset(); }
+      prevSnap = snapshot();
+    }catch(e){}
+    const ok = _enterFromBar.apply(this, arguments);
+    try{
+      if(ok){
+        const nextSnap = snapshot();
+        tdUpdate(prevSnap, nextSnap, traceColor||currentPlayer, 0);
+        prevSnap = nextSnap;
+      }
+    }catch(e){}
+    return ok;
+  };
+
+  const _performBearOff = window.performBearOff;
+  window.performBearOff = function(index){
+    try{
+      if(!traceOn){ traceOn=true; traceColor=currentPlayer; traceReset(); }
+      prevSnap = snapshot();
+    }catch(e){}
+    const ok = _performBearOff.apply(this, arguments);
+    try{
+      const end = (borneOff["#fff"]>=15 || borneOff["#000"]>=15) && (typeof gameOver!=='undefined' ? gameOver : true);
+      if(end){
+        const aiColor = (function(){
+          try{
+            if (window.aiConfig && aiConfig.playsWhite) return "#fff";
+            if (window.aiConfig && aiConfig.playsBlack) return "#000";
+            return traceColor || currentPlayer;
+          }catch(e){ return traceColor || currentPlayer; }
+        })();
+        const winner = (borneOff["#fff"]>=15) ? "#fff" : "#000";
+        const r = (winner===aiColor) ? 1 : -1;
+        if (prevSnap) tdUpdate(prevSnap, null, aiColor, r);
+        traceOn=false; traceColor=null; prevSnap=null;
+        ALPHA = Math.max(0.005, ALPHA * 0.999);
+        saveDelta(dW);
+      } else {
+        const nextSnap = snapshot();
+        tdUpdate(prevSnap, nextSnap, traceColor||currentPlayer, 0);
+        prevSnap = nextSnap;
+      }
+    }catch(e){}
+    return ok;
+  };
+
+  // --- Enhance move choice (regular board moves only; bar/bo handled elsewhere)
+  (function enhanceChooser(){
+    if (typeof window.scoreMove!=='function') return;
+    if (typeof window.chooseGreedyMove!=='function') return;
+    const _chooseGreedyMove = window.chooseGreedyMove;
+    const BETA = 25; // value weight
+
+    window.chooseGreedyMove = function(color){
+      let best = null, bestScore = -1e9;
+      for(let i=0;i<24;i++){
+        const p=points[i];
+        if(p.stack.length>0 && p.stack[p.stack.length-1].color===color){
+          const moves = getPossibleMoves(i);
+          for(const to of moves){
+            const heur = window.scoreMove(i, to, color) || 0;
+            // simulate on snapshot for V(s')
+            const s = snapshot();
+            applyMoveSnap(s, i, to, color);
+            const v2 = valueOf(color, s);
+            const score = heur + BETA*v2;
+            if(score>bestScore){ bestScore=score; best={from:i,to}; }
+          }
+        }
+      }
+      // fallback to original if nothing found
+      if(!best) return _chooseGreedyMove(color);
+      return best;
+    };
+  })();
+
+  // Small export for manual inspection in console (optional)
+  window.__bg_td = {
+    getW: ()=> W.slice(),
+    reset: ()=>{ W = Array(FEAT_COUNT).fill(0); saveDelta(dW); },
+    save : ()=> saveW(W)
+  };
+})();
+</script>
+
+</body>
+</html>
