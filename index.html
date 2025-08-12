@@ -303,6 +303,12 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     <option value="hvb_white">👤 vs 🤖 (AI plays White)</option>
     
   </select>
+  <select id="difficulty" title="Difficulty">
+    <option value="easy" selected>🟢 Easy</option>
+    <option value="medium">🟡 Medium</option>
+    <option value="hard">🟠 Hard</option>
+    <option value="brutal">🔴 Brutal</option>
+  </select>
   <label style="display:flex;align-items:center;gap:6px;">
     ⏱️ AI Delay
     <input id="ai-delay" type="range" min="0" max="800" step="50" value="300">
@@ -383,7 +389,6 @@ let hintTargets = new Set();
 let lastProgress = Date.now();
 let gameOver = false;
 let soundEnabled = true;
-let turnCounter = 0;
 
 /* bear-off click highlight state */
 let bearOffSelectedIndex = null;     // which triangle is highlighted in yellow (bear-off intent)
@@ -1036,42 +1041,32 @@ function playDiceSound(){
   noise.connect(ng); ng.connect(actx.destination); noise.start();
 }
 function rollDice(){
-  if (gameOver) return;
-
-  // Prüfen, ob der richtige Spieler dran ist
-  const expectedColor = (turnCounter % 2 === 0) ? "#fff" : "#000";
-  if (currentPlayer !== expectedColor) {
-    currentPlayer = expectedColor;
-    setTurnIndicator();
-  }
-
-  turnCounter++; // jetzt erhöhen für den nächsten Durchlauf
-
+  if(gameOver) return;
   document.querySelector("#dice-container button").classList.remove("highlight");
-  if (dice.length > 0) return;
-
+  if(dice.length>0) return;
   setRollEnabled(false);
   playDiceSound();
-  const d1 = Math.floor(Math.random()*6) + 1,
-        d2 = Math.floor(Math.random()*6) + 1;
-  dice = (d1 === d2) ? [d1,d1,d1,d1] : [d1,d2];
-  lastProgress = Date.now();
+  const d1=Math.floor(Math.random()*6)+1, d2=Math.floor(Math.random()*6)+1;
+  dice = d1===d2 ? [d1,d1,d1,d1] : [d1,d2];
+  lastProgress=Date.now();
   updateDiceUI();
 
+  // 500ms Pause
   setTimeout(() => {
-    setTurnIndicator();
-    selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null;
-    applyTrayClasses();
-
-    if (bar[currentPlayer].length > 0) {
-      const entries = getBarEntryMoves();
-      if (entries.length === 0) { return forcePass("No legal bar entries."); }
-      selectedPoint = "bar"; possibleMoves = entries;
-    } else if (!hasAnyMove()) {
-      return forcePass("No legal moves.");
-    }
-    computeHints(); updateTrayHighlight(); redraw(); scanUiSanityAndHeal();
+  setTurnIndicator();
+  
+  selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+  
+  if(bar[currentPlayer].length>0){
+    const entries=getBarEntryMoves();
+    if(entries.length===0){ return forcePass("No legal bar entries."); }
+    selectedPoint="bar"; possibleMoves=entries;
+  } else if(!hasAnyMove()){
+    return forcePass("No legal moves.");
+  }
+  computeHints(); updateTrayHighlight(); redraw(); scanUiSanityAndHeal();
   }, 150);
+  return;
 }
 
 /* ===== Watchdog ===== */
@@ -1147,68 +1142,35 @@ function aiShouldPlayNow(){
   return false;
 }
 
-function shotsOpponentHasOn(color, targetIndex){
-  // Zählt, wie viele gegnerische Würfel-Kombis den targetIndex schlagen könnten.
-  const enemy = (color==="#fff") ? "#000" : "#fff";
-  // Grob: prüfe Felder, aus denen der Gegner mit 1..6 treffen könnte.
-  let shots = 0;
-  for (let d=1; d<=6; d++){
-    const from = (color==="#fff") ? (targetIndex + d) : (targetIndex - d);
-    if (from < 0 || from > 23) continue;
-    const st = points[from].stack;
-    if (st.length && st[st.length-1].color === enemy) shots++;
-  }
-  return shots;
-}
-
-function isHomeIndex(color, idx){
-  return color==="#fff" ? (idx>=18 && idx<=23) : (idx>=0 && idx<=5);
-}
-
+// Heuristic scoring for a move (from -> to). Higher is better.
 function scoreMove(from, to, color){
   let score = 0;
   const enemy = (color==="#fff") ? "#000" : "#fff";
   const src = points[from], dest = points[to];
+  const dist = Math.abs(to-from);
 
-  // dein bisheriger Fortschritts-/Hit-/Point-Score ...
-  // (deins) score += ...
-  // (deins) if(dest.stack.length===1 && dest.stack[0].color===enemy) score += 50;
-  // (… usw.)
+  // prefer bearing in / advancing toward home
+  score += (color==="#fff" ? (to - from) : (from - to)) * 3;
 
-  // --- NEU: Safety im eigenen Heimfeld priorisieren ---
-  // Wenn nach dem Zug am Ziel ein eigener Blot entsteht
-  const destWillBeBlot = (dest.stack.length === 0);
-  if (destWillBeBlot){
-    const inHome = isHomeIndex(color, to);
-    const shots = shotsOpponentHasOn(color, to);
-    if (inHome){
-      // Im eigenen Heimfeld teuer bestrafen
-      score -= 30;            // Basisstrafe
-      score -= 8 * shots;     // je möglichem Gegenschuss extra
-    } else {
-      // Außerhalb moderat
-      score -= 6;
-      score -= 2 * shots;
-    }
+  // hitting blot?
+  if(dest.stack.length===1 && dest.stack[0].color===enemy) score += 50;
+
+  // making a point (landing on own single) becomes 2+
+  if(dest.stack.length>=1 && dest.stack[dest.stack.length-1].color===color) score += 8;
+
+  // leaving a blot at src (after move) – penalty if >0 remain and becomes single
+  const srcCountAfter = src.stack.length - 1;
+  if(srcCountAfter===1) score -= 10;
+  if(srcCountAfter===0) score -= 1; // slightly worse to empty a safe anchor if not necessary
+
+  // get closer to bearing off (pip reduction proxy)
+  score += (color==="#fff" ? to : (23-to)) * 0.1;
+
+  // prefer moves inside home board when home-ready
+  if(isHomeReady(color)){
+    const inHome = (color==="#fff") ? (to>=18 && to<=23) : (to>=0 && to<=5);
+    if(inHome) score += 6;
   }
-
-  // Wenn am Ausgangsfeld nach dem Zug ein Blot zurückbleibt
-  const srcAfter = src.stack.length - 1;
-  if (srcAfter === 1){
-    const topColor = src.stack[0]?.color;
-    if (topColor === color){
-      const inHomeSrc = isHomeIndex(color, from);
-      const shots = shotsOpponentHasOn(color, from);
-      if (inHomeSrc){
-        score -= 24;          // stärker im Heimfeld
-        score -= 6 * shots;
-      } else {
-        score -= 10;
-        score -= 2 * shots;
-      }
-    }
-  }
-
   return score;
 }
 
@@ -1916,6 +1878,163 @@ watchdogTick = function(){ _origWatchdog(); if(aiShouldPlayNow() && !aiConfig.ru
 
   console.log("[Anti Double-Roll Guard] active (1s window)");
 })();
+
+/* === Difficulty & Phase-Aware Heuristics (additive) === */
+let aiDifficulty = "easy"; // easy | medium | hard | brutal
+
+function setDifficultyFromSelect(){
+  const dsel = document.getElementById("difficulty");
+  if (!dsel) return;
+  aiDifficulty = dsel.value;
+}
+const _diffSel = document.getElementById("difficulty");
+if (_diffSel) {
+  _diffSel.addEventListener("change", setDifficultyFromSelect);
+  setDifficultyFromSelect();
+}
+
+// Helpers for risk/safety
+function isHomeIndex(color, idx){ return color==="#fff" ? (idx>=18 && idx<=23) : (idx>=0 && idx<=5); }
+function shotsOpponentHasOn(color, targetIndex){
+  // Very rough: how many enemy landing squares (1..6) attack targetIndex
+  const enemy = (color==="#fff") ? "#000" : "#fff";
+  let shots = 0;
+  for (let d=1; d<=6; d++){
+    const from = (color==="#fff") ? (targetIndex + d) : (targetIndex - d);
+    if (from < 0 || from > 23) continue;
+    const st = points[from].stack;
+    if (st.length && st[st.length-1].color === enemy) shots++;
+  }
+  return shots;
+}
+
+function anyContactExists(){
+  // true if opposing checkers can still hit each other (not pure race)
+  // white moves low->high; black high->low
+  let minWhite = 24, maxBlack = -1;
+  for (let i=0;i<24;i++){
+    const st = points[i].stack; if(!st.length) continue;
+    const top = st[st.length-1].color;
+    if (top==="#fff") minWhite = Math.min(minWhite, i);
+    else maxBlack = Math.max(maxBlack, i);
+  }
+  // If white's furthest-back checker is ahead of black's furthest-forward checker -> no contact
+  return !(minWhite > maxBlack);
+}
+
+function scoreMovePhaseWeights(color){
+  // Phase-based weights & difficulty tuning
+  const race = !anyContactExists();
+  let w = {
+    progress: race ? 5.0 : 3.0,    // move toward home
+    makePoint: race ? 1.0 : 8.0,   // making a point
+    hit: race ? 1.0 : 35.0,        // hitting enemy blot
+    blotSrc: race ? -2.0 : -10.0,  // leaving blot at source
+    blotDst: race ? -4.0 : -8.0,   // landing as blot
+    shots: race ? -1.0 : -4.0,     // enemy shots against new blot
+    homePref: race ? 8.0 : 3.0,    // prefer inside home when home-ready
+    bearoffBias: race ? 10.0 : 4.0 // when home-ready, prefer nearer to bear-off
+  };
+  if (aiDifficulty==="medium"){
+    w.hit *= 0.8; w.shots *= 1.2; w.blotDst *= 1.2; w.homePref *= 1.2; w.bearoffBias *= 1.1;
+  } else if (aiDifficulty==="hard"){
+    w.hit *= 0.7; w.shots *= 1.4; w.blotDst *= 1.4; w.progress *= 1.1; w.bearoffBias *= 1.25;
+  } else if (aiDifficulty==="brutal"){
+    w.hit *= 0.6; w.shots *= 1.6; w.blotDst *= 1.6; w.progress *= 1.2; w.bearoffBias *= 1.35; w.makePoint *= 1.1;
+  }
+  return w;
+}
+
+// Wrap existing scoreMove to inject phase-aware penalties/bonuses without breaking base logic
+const _scoreMove_base = scoreMove;
+scoreMove = function(from, to, color){
+  let score = _scoreMove_base(from, to, color);
+  const enemy = (color==="#fff") ? "#000" : "#fff";
+  const src = points[from], dest = points[to];
+  const w = scoreMovePhaseWeights(color);
+
+  // Progress toward home
+  score += (color==="#fff" ? (to - from) : (from - to)) * w.progress;
+
+  // Making a point (2+)
+  if (dest.stack.length>=1 && dest.stack[dest.stack.length-1].color===color) score += w.makePoint;
+
+  // Hitting bonus (but lower on higher difficulty)
+  if (dest.stack.length===1 && dest.stack[0].color===enemy) score += w.hit;
+
+  // Blot at destination
+  const destWillBeBlot = (dest.stack.length === 0);
+  if (destWillBeBlot){
+    const shots = shotsOpponentHasOn(color, to);
+    if (isHomeIndex(color, to)){
+      score += w.blotDst + w.shots * shots - 6; // extra penalty inside home
+    } else {
+      score += w.blotDst * 0.8 + w.shots * (shots*0.6);
+    }
+  }
+
+  // Blot left at source
+  const srcAfter = src.stack.length - 1;
+  if (srcAfter === 1 && src.stack[0]?.color === color){
+    const shots = shotsOpponentHasOn(color, from);
+    if (isHomeIndex(color, from)){
+      score += w.blotSrc * 1.6 + w.shots * shots;
+    } else {
+      score += w.blotSrc + w.shots * (shots*0.5);
+    }
+  }
+
+  // When home-ready, prefer moves inside home & nearer to bear-off
+  if (isHomeReady(color)){
+    const inHomeTo = (color==="#fff") ? (to>=18 && to<=23) : (to>=0 && to<=5);
+    if (inHomeTo) score += w.homePref;
+    // prefer higher point for white, lower for black
+    score += (color==="#fff" ? (to-18) : (5-to)) * w.bearoffBias * 0.2;
+  }
+  return score;
+};
+
+/* === Book-first move ordering for Medium+ === */
+function pickFromExactOrLightBook(color, entriesOnly){
+  // entriesOnly=true -> only bar entries
+  try{
+    // Light Book
+    if (typeof window.pickFromLightBook === "function"){
+      const mv = window.pickFromLightBook(color);
+      if (mv && (!entriesOnly || mv.type==="bar")) return mv;
+    }
+  }catch(e){}
+  // (Optional) exact book if present (from earlier patch)
+  try{
+    if (typeof window.aiSelectFromBook === "function"){
+      const mv2 = window.aiSelectFromBook(color);
+      if (mv2 && (!entriesOnly || mv2.type==="bar")) return mv2;
+    }
+  }catch(e){}
+  return null;
+}
+
+// Wrap chooseGreedyMove and chooseBarEntryTarget to consult Book first on higher difficulties
+if (typeof window.chooseGreedyMove === "function"){
+  const _chooseGreedyMove_old = window.chooseGreedyMove;
+  window.chooseGreedyMove = function(color){
+    if (aiDifficulty!=="easy"){
+      const mv = pickFromExactOrLightBook(color, false);
+      if (mv && mv.type==="move") return {from: mv.from, to: mv.to, _fromBookFirst:true};
+    }
+    return _chooseGreedyMove_old(color);
+  };
+}
+if (typeof window.chooseBarEntryTarget === "function"){
+  const _chooseBarEntryTarget_old = window.chooseBarEntryTarget;
+  window.chooseBarEntryTarget = function(color, entries){
+    if (aiDifficulty!=="easy"){
+      const mv = pickFromExactOrLightBook(color, true);
+      if (mv && mv.type==="bar" && entries.includes(mv.to)) return mv.to;
+    }
+    return _chooseBarEntryTarget_old(color, entries);
+  };
+}
 </script>
 </body>
 </html>
