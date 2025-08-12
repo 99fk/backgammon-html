@@ -406,6 +406,48 @@ const btnSound = document.getElementById("btn-sound");
 const btnRestart = document.getElementById("btn-restart");
 const btnRoll = document.getElementById("btn-roll");
 const turnIndicator = document.getElementById("turn-indicator");
+// === Preferences Persistence ===
+const SETTINGS_KEY = "bg_prefs_v1";
+
+function loadPrefs(){
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null"); }
+  catch(_) { return null; }
+}
+function savePrefs(){
+  try{
+    const modeSel = document.getElementById("mode");
+    const diffSel = document.getElementById("difficulty");
+    const delayEl = document.getElementById("ai-delay");
+    const prefs = {
+      mode: modeSel ? modeSel.value : null,
+      difficulty: diffSel ? diffSel.value : null,
+      sound: !!soundEnabled,
+      aiDelay: delayEl ? parseInt(delayEl.value, 10) : null
+    };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(prefs));
+  }catch(_){}
+}
+function applyPrefsFromStorage(){
+  const p = loadPrefs(); if(!p) return;
+  const modeSel = document.getElementById("mode");
+  const diffSel = document.getElementById("difficulty");
+  const delayEl = document.getElementById("ai-delay");
+
+  if (modeSel && p.mode && ["hvh","hvb_black","hvb_white"].includes(p.mode)) {
+    modeSel.value = p.mode;
+  }
+  if (diffSel && p.difficulty && ["easy","medium","hard","brutal"].includes(p.difficulty)) {
+    diffSel.value = p.difficulty;
+  }
+  if (delayEl && Number.isFinite(p.aiDelay)) {
+    delayEl.value = String(p.aiDelay);
+  }
+  if (typeof p.sound === "boolean") {
+    soundEnabled = p.sound;
+    btnSound.textContent = soundEnabled ? "🔈 Sound: On" : "🔇 Sound: Off";
+  }
+}
+
 
 
 
@@ -465,6 +507,7 @@ function forcePass(reason="No legal moves."){
 function toggleSound(){
   soundEnabled = !soundEnabled;
   btnSound.textContent = soundEnabled ? "🔈 Sound: On" : "🔇 Sound: Off";
+  savePrefs();
 }
 btnSound.addEventListener("click", toggleSound);
 
@@ -1128,11 +1171,14 @@ function setModeFromSelect(){
   else if(val==="hvb_white"){ aiConfig.playsWhite=true; aiConfig.playsBlack=false; }
   else { aiConfig.playsWhite=false; aiConfig.playsBlack=false; }
 }
-document.getElementById("mode").addEventListener("change", ()=>{ setModeFromSelect(); });
-document.getElementById("ai-delay").addEventListener("input", (e)=>{ aiConfig.delayMs = parseInt(e.target.value,10)||0; });
+document.getElementById("mode").addEventListener("change", ()=>{ setModeFromSelect(); savePrefs(); });
+document.getElementById("ai-delay").addEventListener("input", (e)=>{ aiConfig.delayMs = parseInt(e.target.value,10)||0; savePrefs(); });
+document.getElementById("difficulty").addEventListener("change", ()=>{ savePrefs(); });
 
+applyPrefsFromStorage();
 setModeFromSelect();
 aiConfig.delayMs = parseInt(document.getElementById("ai-delay").value, 10) || 300;
+savePrefs();
 
 function aiShouldPlayNow(){
   if(gameOver) return false;
