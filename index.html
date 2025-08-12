@@ -1807,34 +1807,52 @@ watchdogTick = function(){ _origWatchdog(); if(aiShouldPlayNow() && !aiConfig.ru
 })();
 </script>
 
-<!-- === Anti Double-Roll Guard (v1) === -->
+
+<!-- === Anti Double-Roll Guard (v2, 1s window) === -->
 <script id="anti_double_roll_guard">
 (function(){
   // Color that rolled last; used to prevent same color from rolling again
   window._lastRollColor = null;
+  window._lastRollTime = 0;
+
+  function _expireGuardAfter(color, ms){
+    setTimeout(function(){
+      // If the guard is still set for the same color after ms, clear it to avoid deadlocks
+      if (window._lastRollColor === color) {
+        window._lastRollColor = null;
+      }
+    }, ms);
+  }
 
   const _origRollDice = window.rollDice;
   window.rollDice = function(){
     if (gameOver) return;
-    // If same color tries to roll again while we haven't observed a turn switch yet, block it.
+
+    const now = Date.now();
     if (window._lastRollColor === currentPlayer) {
-      // Optional: visual nudge
-      try { showToast("Wait for turn switch…"); } catch(e){}
-      return;
+      // Only block for up to 2000ms after the last roll by this color
+      if (now - window._lastRollTime < 2000) {
+        try { showToast("Wait for turn switch…"); } catch(e){}
+        return;
+      } else {
+        // Safety: auto-expired guard → clear and proceed
+        window._lastRollColor = null;
+      }
     }
-    // Allow roll and record who rolled
+
+    // Allow roll and record who rolled + timestamp
     window._lastRollColor = currentPlayer;
+    window._lastRollTime = now;
+    _expireGuardAfter(window._lastRollColor, 1100); // auto-clear after ~1.1s
     _origRollDice();
   };
 
-  // When AI finishes a turn and switch happens via timeout, _lastRollColor will differ
-  // from currentPlayer, so next roll will be allowed automatically.
-
-  // On forced pass the same guard works; on full restart, clear the memory.
+  // On full restart, clear memory.
   const _origRestart = window.restartGame;
   if (typeof _origRestart === "function") {
     window.restartGame = function(){
       window._lastRollColor = null;
+      window._lastRollTime = 0;
       _origRestart.apply(this, arguments);
     };
   }
@@ -1844,12 +1862,15 @@ watchdogTick = function(){ _origWatchdog(); if(aiShouldPlayNow() && !aiConfig.ru
   if (typeof _origMaybeWin === "function") {
     window.maybeDeclareWinner = function(){
       const r = _origMaybeWin.apply(this, arguments);
-      if (gameOver) window._lastRollColor = null;
+      if (gameOver) {
+        window._lastRollColor = null;
+        window._lastRollTime = 0;
+      }
       return r;
     };
   }
 
-  console.log("[Anti Double-Roll Guard] active");
+  console.log("[Anti Double-Roll Guard] active (1s window)");
 })();
 </script>
 </body>
