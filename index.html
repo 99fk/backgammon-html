@@ -383,6 +383,7 @@ let hintTargets = new Set();
 let lastProgress = Date.now();
 let gameOver = false;
 let soundEnabled = true;
+let turnCounter = 0;
 
 /* bear-off click highlight state */
 let bearOffSelectedIndex = null;     // which triangle is highlighted in yellow (bear-off intent)
@@ -1035,32 +1036,42 @@ function playDiceSound(){
   noise.connect(ng); ng.connect(actx.destination); noise.start();
 }
 function rollDice(){
-  if(gameOver) return;
+  if (gameOver) return;
+
+  // Prüfen, ob der richtige Spieler dran ist
+  const expectedColor = (turnCounter % 2 === 0) ? "#fff" : "#000";
+  if (currentPlayer !== expectedColor) {
+    currentPlayer = expectedColor;
+    setTurnIndicator();
+  }
+
+  turnCounter++; // jetzt erhöhen für den nächsten Durchlauf
+
   document.querySelector("#dice-container button").classList.remove("highlight");
-  if(dice.length>0) return;
+  if (dice.length > 0) return;
+
   setRollEnabled(false);
   playDiceSound();
-  const d1=Math.floor(Math.random()*6)+1, d2=Math.floor(Math.random()*6)+1;
-  dice = d1===d2 ? [d1,d1,d1,d1] : [d1,d2];
-  lastProgress=Date.now();
+  const d1 = Math.floor(Math.random()*6) + 1,
+        d2 = Math.floor(Math.random()*6) + 1;
+  dice = (d1 === d2) ? [d1,d1,d1,d1] : [d1,d2];
+  lastProgress = Date.now();
   updateDiceUI();
 
-  // 500ms Pause
   setTimeout(() => {
-  setTurnIndicator();
-  
-  selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
-  
-  if(bar[currentPlayer].length>0){
-    const entries=getBarEntryMoves();
-    if(entries.length===0){ return forcePass("No legal bar entries."); }
-    selectedPoint="bar"; possibleMoves=entries;
-  } else if(!hasAnyMove()){
-    return forcePass("No legal moves.");
-  }
-  computeHints(); updateTrayHighlight(); redraw(); scanUiSanityAndHeal();
+    setTurnIndicator();
+    selectedPoint=null; possibleMoves=[]; bearOffSelectedIndex=null; trayFlash=null;
+    applyTrayClasses();
+
+    if (bar[currentPlayer].length > 0) {
+      const entries = getBarEntryMoves();
+      if (entries.length === 0) { return forcePass("No legal bar entries."); }
+      selectedPoint = "bar"; possibleMoves = entries;
+    } else if (!hasAnyMove()) {
+      return forcePass("No legal moves.");
+    }
+    computeHints(); updateTrayHighlight(); redraw(); scanUiSanityAndHeal();
   }, 150);
-  return;
 }
 
 /* ===== Watchdog ===== */
@@ -1136,35 +1147,68 @@ function aiShouldPlayNow(){
   return false;
 }
 
-// Heuristic scoring for a move (from -> to). Higher is better.
+function shotsOpponentHasOn(color, targetIndex){
+  // Zählt, wie viele gegnerische Würfel-Kombis den targetIndex schlagen könnten.
+  const enemy = (color==="#fff") ? "#000" : "#fff";
+  // Grob: prüfe Felder, aus denen der Gegner mit 1..6 treffen könnte.
+  let shots = 0;
+  for (let d=1; d<=6; d++){
+    const from = (color==="#fff") ? (targetIndex + d) : (targetIndex - d);
+    if (from < 0 || from > 23) continue;
+    const st = points[from].stack;
+    if (st.length && st[st.length-1].color === enemy) shots++;
+  }
+  return shots;
+}
+
+function isHomeIndex(color, idx){
+  return color==="#fff" ? (idx>=18 && idx<=23) : (idx>=0 && idx<=5);
+}
+
 function scoreMove(from, to, color){
   let score = 0;
   const enemy = (color==="#fff") ? "#000" : "#fff";
   const src = points[from], dest = points[to];
-  const dist = Math.abs(to-from);
 
-  // prefer bearing in / advancing toward home
-  score += (color==="#fff" ? (to - from) : (from - to)) * 3;
+  // dein bisheriger Fortschritts-/Hit-/Point-Score ...
+  // (deins) score += ...
+  // (deins) if(dest.stack.length===1 && dest.stack[0].color===enemy) score += 50;
+  // (… usw.)
 
-  // hitting blot?
-  if(dest.stack.length===1 && dest.stack[0].color===enemy) score += 50;
-
-  // making a point (landing on own single) becomes 2+
-  if(dest.stack.length>=1 && dest.stack[dest.stack.length-1].color===color) score += 8;
-
-  // leaving a blot at src (after move) – penalty if >0 remain and becomes single
-  const srcCountAfter = src.stack.length - 1;
-  if(srcCountAfter===1) score -= 10;
-  if(srcCountAfter===0) score -= 1; // slightly worse to empty a safe anchor if not necessary
-
-  // get closer to bearing off (pip reduction proxy)
-  score += (color==="#fff" ? to : (23-to)) * 0.1;
-
-  // prefer moves inside home board when home-ready
-  if(isHomeReady(color)){
-    const inHome = (color==="#fff") ? (to>=18 && to<=23) : (to>=0 && to<=5);
-    if(inHome) score += 6;
+  // --- NEU: Safety im eigenen Heimfeld priorisieren ---
+  // Wenn nach dem Zug am Ziel ein eigener Blot entsteht
+  const destWillBeBlot = (dest.stack.length === 0);
+  if (destWillBeBlot){
+    const inHome = isHomeIndex(color, to);
+    const shots = shotsOpponentHasOn(color, to);
+    if (inHome){
+      // Im eigenen Heimfeld teuer bestrafen
+      score -= 30;            // Basisstrafe
+      score -= 8 * shots;     // je möglichem Gegenschuss extra
+    } else {
+      // Außerhalb moderat
+      score -= 6;
+      score -= 2 * shots;
+    }
   }
+
+  // Wenn am Ausgangsfeld nach dem Zug ein Blot zurückbleibt
+  const srcAfter = src.stack.length - 1;
+  if (srcAfter === 1){
+    const topColor = src.stack[0]?.color;
+    if (topColor === color){
+      const inHomeSrc = isHomeIndex(color, from);
+      const shots = shotsOpponentHasOn(color, from);
+      if (inHomeSrc){
+        score -= 24;          // stärker im Heimfeld
+        score -= 6 * shots;
+      } else {
+        score -= 10;
+        score -= 2 * shots;
+      }
+    }
+  }
+
   return score;
 }
 
