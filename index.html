@@ -528,9 +528,26 @@ function drawStacks(){
   });
 }
 function drawBar(){
-  const size=pointRadius, xMid=w/2-10, midY=h/2;
-  if(bar["#fff"].length>0){ drawStone(xMid,midY,"#fff"); ctx.fillStyle="#fff"; ctx.font="bold 18px system-ui"; ctx.textAlign="left"; ctx.fillText(bar["#fff"].length,xMid+size+6,midY+6); }
-  if(bar["#000"].length>0){ drawStone(xMid,midY,"#000"); ctx.fillStyle="#fff"; ctx.font="bold 18px system-ui"; ctx.textAlign="left"; ctx.fillText(bar["#000"].length,xMid+size+6,midY+6); }
+  const size = pointRadius;
+  const xMid = w/2;   // beide haben dieselbe X-Position (Mitte)
+  const whiteY = h/2 - size - 4;  // etwas oberhalb der Mitte
+  const blackY = h/2 + size + 4;  // etwas unterhalb der Mitte
+
+  if (bar["#fff"].length > 0){
+    drawStone(xMid, whiteY, "#fff");
+    ctx.fillStyle = "#000"; // Kontrast für weiße Steine
+    ctx.font = "bold 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(bar["#fff"].length, xMid, whiteY + 6);
+  }
+
+  if (bar["#000"].length > 0){
+    drawStone(xMid, blackY, "#000");
+    ctx.fillStyle = "#fff"; // Kontrast für schwarze Steine
+    ctx.font = "bold 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(bar["#000"].length, xMid, blackY + 6);
+  }
 }
 function drawUnderlineHints(indices){
   ctx.save();
@@ -1563,5 +1580,277 @@ watchdogTick = function(){ _origWatchdog(); if(aiShouldPlayNow() && !aiConfig.ru
 })();
 </script>
 
+
+<!-- === Opponent Move Logging + Simple Opening Book Patch (v1) === -->
+<script id="opponent_book_patch">
+(function(){
+  const DB_KEY = "bg_human_book_v1";
+  const SESS_KEY = "bg_human_session_v1";
+  const BOOK_LIMIT = 2000; // cap entries to avoid bloat
+
+  // --- utilities ---
+  function enemyOf(c){ return c==="#fff" ? "#000" : "#fff"; }
+  function isAIColor(c){
+    try { return (c==="#fff" && aiConfig.playsWhite) || (c==="#000" && aiConfig.playsBlack); }
+    catch(e){ return false; }
+  }
+  function isHumanColor(c){ return !isAIColor(c); }
+
+  function encodeBoardString(){
+    // compact, deterministic: "W:counts0..23|B:counts0..23|barW:n|barB:n|offW:n|offB:n|turn:C"
+    const wCounts = [];
+    const bCounts = [];
+    for(let i=0;i<24;i++){
+      const st = points[i]?.stack || [];
+      let wc=0, bc=0;
+      for(const s of st){ if(s.color==="#fff") wc++; else bc++; }
+      wCounts.push(wc); bCounts.push(bc);
+    }
+    const s = [
+      "W:"+wCounts.join(","),
+      "B:"+bCounts.join(","),
+      "barW:"+(bar["#fff"]?.length||0),
+      "barB:"+(bar["#000"]?.length||0),
+      "offW:"+(borneOff["#fff"]||0),
+      "offB:"+(borneOff["#000"]||0),
+      "turn:"+currentPlayer
+    ].join("|");
+    return s;
+  }
+  function djb2(str){
+    let h=5381>>>0;
+    for(let i=0;i<str.length;i++){ h = ((h<<5) + h + str.charCodeAt(i))>>>0; }
+    return h.toString(36);
+  }
+  function stateHash(){ return djb2(encodeBoardString()); }
+
+  function loadBook(){
+    try{ const obj = JSON.parse(localStorage.getItem(DB_KEY)||"{}"); return obj && typeof obj==="object" ? obj : {}; }
+    catch(e){ return {}; }
+  }
+  function saveBook(book){
+    try{ localStorage.setItem(DB_KEY, JSON.stringify(book)); } catch(e){}
+  }
+  function pruneIfNeeded(book){
+    const keys = Object.keys(book);
+    if(keys.length <= BOOK_LIMIT) return;
+    // remove the lowest-frequency entries first
+    keys.sort((a,b)=> (book[a].total||0) - (book[b].total||0));
+    const remove = keys.length - BOOK_LIMIT;
+    for(let i=0;i<remove;i++) delete book[keys[i]];
+  }
+
+  // --- session trajectory of HUMAN (opponent of AI) moves ---
+  let session = [];
+  function resetSession(){
+    session = [];
+    try{ sessionStorage.setItem(SESS_KEY, JSON.stringify(session)); }catch(e){}
+  }
+  resetSession();
+
+  function logOpponentMove(rec){
+    // rec = {preHash, type, from?, to?, index?}
+    try {
+      session.push(rec);
+      sessionStorage.setItem(SESS_KEY, JSON.stringify(session));
+    } catch(e){}
+  }
+
+  function commitSessionToBook(){
+    if(!session.length) return;
+    const book = loadBook();
+    for(const r of session){
+      const key = r.preHash;
+      if(!book[key]) book[key] = { moves: {}, total: 0 };
+      let moveKey;
+      if(r.type==="move"){
+        moveKey = "m:"+r.from+">"+r.to;
+      } else if(r.type==="bar"){
+        moveKey = "b:"+r.to;
+      } else if(r.type==="bearoff"){
+        moveKey = "o:"+r.index;
+      } else {
+        continue;
+      }
+      book[key].moves[moveKey] = (book[key].moves[moveKey]||0) + 1;
+      book[key].total = (book[key].total||0) + 1;
+    }
+    pruneIfNeeded(book);
+    saveBook(book);
+    resetSession();
+  }
+
+  // --- wrap core move functions to capture HUMAN moves ---
+  const _moveOne = window.moveOne;
+  window.moveOne = function(from,to){
+    const humanTurn = isHumanColor(currentPlayer);
+    const h = humanTurn ? stateHash() : null;
+    _moveOne(from,to);
+    if(humanTurn){
+      logOpponentMove({preHash:h, type:"move", from, to});
+    }
+  };
+
+  const _enterFromBar = window.enterFromBar;
+  window.enterFromBar = function(to){
+    const humanTurn = isHumanColor(currentPlayer);
+    const h = humanTurn ? stateHash() : null;
+    const ok = _enterFromBar(to);
+    if(humanTurn && ok){
+      logOpponentMove({preHash:h, type:"bar", to});
+    }
+    return ok;
+  };
+
+  const _performBearOff = window.performBearOff;
+  window.performBearOff = function(index){
+    const humanTurn = isHumanColor(currentPlayer);
+    const h = humanTurn ? stateHash() : null;
+    const ok = _performBearOff(index);
+    if(humanTurn && ok){
+      logOpponentMove({preHash:h, type:"bearoff", index});
+    }
+    // If game ended here, decide whether to commit the human session
+    if(gameOver){
+      const winnerColor = (borneOff["#fff"]>=15) ? "#fff" : (borneOff["#000"]>=15 ? "#000" : null);
+      if(winnerColor && isHumanColor(winnerColor)){
+        commitSessionToBook();
+      } else {
+        // if AI won, just forget the session trajectory
+        resetSession();
+      }
+    }
+    return ok;
+  };
+
+  // Also reset session on restart
+  const _restartGame = window.restartGame;
+  window.restartGame = function(){
+    resetSession();
+    _restartGame();
+  };
+
+  // --- AI: consult human book before heuristic ---
+  function aiSelectFromBook(color){
+    const h = stateHash();
+    const book = loadBook();
+    const entry = book[h];
+    if(!entry || !entry.moves) return null;
+
+    // compute legal options now
+    const legal = [];
+    if(bar[color].length>0){
+      const entries = getBarEntryMoves();
+      for(const t of entries) legal.push({type:"bar", to:t});
+    } else {
+      // regular moves
+      for(let i=0;i<24;i++){
+        const p = points[i];
+        if(p.stack.length && p.stack[p.stack.length-1].color===color){
+          const ms = getPossibleMoves(i);
+          for(const t of ms) legal.push({type:"move", from:i, to:t});
+        }
+      }
+      // bear-off
+      if(isHomeReady(color)){
+        for(let i=0;i<24;i++){
+          const st=points[i].stack;
+          if(st.length && st[st.length-1].color===color && canBearOffFrom(i)){
+            legal.push({type:"bearoff", index:i});
+          }
+        }
+      }
+    }
+    if(!legal.length) return null;
+
+    // score each legal move by book frequency
+    let best=null, bestScore=-1;
+    for(const mv of legal){
+      let key;
+      if(mv.type==="move") key = "m:"+mv.from+">"+mv.to;
+      else if(mv.type==="bar") key = "b:"+mv.to;
+      else if(mv.type==="bearoff") key = "o:"+mv.index;
+      const cnt = entry.moves[key]||0;
+      if(cnt>bestScore){ bestScore=cnt; best=mv; }
+    }
+    return bestScore>0 ? best : null;
+  }
+
+  // hook into AI loop: prefer book when available
+  const _chooseGreedyMove = window.chooseGreedyMove;
+  window.chooseGreedyMove = function(color){
+    const mvFromBook = aiSelectFromBook(color);
+    if(mvFromBook && mvFromBook.type==="move") return {from: mvFromBook.from, to: mvFromBook.to, _fromBook:true};
+    // fallback to original
+    return _chooseGreedyMove(color);
+  };
+
+  const _chooseBarEntryTarget = window.chooseBarEntryTarget;
+  window.chooseBarEntryTarget = function(color, entries){
+    const mvFromBook = aiSelectFromBook(color);
+    if(mvFromBook && mvFromBook.type==="bar" && entries.includes(mvFromBook.to)){
+      return mvFromBook.to;
+    }
+    return _chooseBarEntryTarget(color, entries);
+  };
+
+  // Bear-off: handled inside aiPlayTurn loop by scanning opts; we override pick there
+  const _aiPlayTurn = window.aiPlayTurn;
+  window.aiPlayTurn = async function(){
+    // We can't easily intercept each step inside original loop; however we keep book preference
+    // by wrapping chooseGreedyMove and chooseBarEntryTarget as done above.
+    return _aiPlayTurn.apply(this, arguments);
+  };
+
+  // For transparency in console
+  console.log("[Opponent Book Patch] active. Entries:", Object.keys(loadBook()).length);
+})();
+</script>
+
+<!-- === Anti Double-Roll Guard (v1) === -->
+<script id="anti_double_roll_guard">
+(function(){
+  // Color that rolled last; used to prevent same color from rolling again
+  window._lastRollColor = null;
+
+  const _origRollDice = window.rollDice;
+  window.rollDice = function(){
+    if (gameOver) return;
+    // If same color tries to roll again while we haven't observed a turn switch yet, block it.
+    if (window._lastRollColor === currentPlayer) {
+      // Optional: visual nudge
+      try { showToast("Wait for turn switch…"); } catch(e){}
+      return;
+    }
+    // Allow roll and record who rolled
+    window._lastRollColor = currentPlayer;
+    _origRollDice();
+  };
+
+  // When AI finishes a turn and switch happens via timeout, _lastRollColor will differ
+  // from currentPlayer, so next roll will be allowed automatically.
+
+  // On forced pass the same guard works; on full restart, clear the memory.
+  const _origRestart = window.restartGame;
+  if (typeof _origRestart === "function") {
+    window.restartGame = function(){
+      window._lastRollColor = null;
+      _origRestart.apply(this, arguments);
+    };
+  }
+
+  // Also clear when a winner is declared
+  const _origMaybeWin = window.maybeDeclareWinner;
+  if (typeof _origMaybeWin === "function") {
+    window.maybeDeclareWinner = function(){
+      const r = _origMaybeWin.apply(this, arguments);
+      if (gameOver) window._lastRollColor = null;
+      return r;
+    };
+  }
+
+  console.log("[Anti Double-Roll Guard] active");
+})();
+</script>
 </body>
 </html>
