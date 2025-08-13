@@ -128,7 +128,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
   #dice-container button { font-size: 15px; padding: 8px 10px; }
 }
 
-
 /* === Desktop tweaks (no iframe, single-file responsive) === */
 @media (min-width: 1024px){
   canvas { width: min(95vw, 1100px); height: auto; }
@@ -138,7 +137,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
   .stone { width: 44px; height: 44px; }
   .count { font-size: 22px; }
 }
-
 
 /* === Trays below the board, compact layout === */
 #wrap { 
@@ -303,11 +301,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
     <option value="hvb_white">👤 vs 🤖 (AI plays White)</option>
     
   </select>
-  <select id="difficulty" title="Difficulty">
-    <option value="easy" selected>🟢 Easy</option>
-    <option value="medium">🟡 Medium</option>
-    <option value="hard">🟠 Hard</option>
-    <option value="brutal">🔴 Brutal</option>
+  <select style="display:none;" id="difficulty" title="Difficulty">
+    <option value="brutal" selected>🔴 Brutal</option>
   </select>
   <label style="display:flex;align-items:center;gap:6px;">
     ⏱️ AI Delay
@@ -389,6 +384,7 @@ let hintTargets = new Set();
 let lastProgress = Date.now();
 let gameOver = false;
 let soundEnabled = true;
+let lastRollerColor = null;
 
 /* bear-off click highlight state */
 let bearOffSelectedIndex = null;     // which triangle is highlighted in yellow (bear-off intent)
@@ -448,15 +444,22 @@ function applyPrefsFromStorage(){
   }
 }
 
-
-
-
 // --- Roll button enable/disable helper ---
 function setRollEnabled(on){
   try {
-    btnRoll.disabled = !on;
-    btnRoll.style.opacity = on ? "1" : "0.5";
-    btnRoll.style.pointerEvents = on ? "auto" : "none";
+    if (on) {
+      // Erst nach 1 Sekunde aktivieren
+      setTimeout(() => {
+        btnRoll.disabled = false;
+        btnRoll.style.opacity = "1";
+        btnRoll.style.pointerEvents = "auto";
+      }, 500);
+    } else {
+      // Sofort deaktivieren
+      btnRoll.disabled = true;
+      btnRoll.style.opacity = "0.5";
+      btnRoll.style.pointerEvents = "none";
+    }
   } catch(e){}
 }
 
@@ -487,20 +490,42 @@ function updateDiceUI() {
   renderDie("dice1", dice[0]); renderDie("dice2", dice[1]);
 }
 
-function forcePass(reason="No legal moves."){
+function forcePass(reason = "No legal moves.") {
   if (gameOver) return;
-  const next=currentPlayer==="#fff"?"Black":"White";
+  const next = currentPlayer === "#fff" ? "Black" : "White";
   showToast(`${reason} Turn passes to ${next}.`);
-  dice=[]; updateDiceUI(); selectedPoint=null; possibleMoves=[];
-  bearOffSelectedIndex=null; trayFlash=null; applyTrayClasses();
+  dice = [];
+  updateDiceUI();
+  selectedPoint = null;
+  possibleMoves = [];
+  bearOffSelectedIndex = null;
+  trayFlash = null;
+  applyTrayClasses();
 
   // Delay the turn switch slightly; also re-enable rolling
   setTimeout(() => {
-    currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+    // Erstmal Spieler wechseln
+    currentPlayer = currentPlayer === "#fff" ? "#000" : "#fff";
+    if (lastRollerColor && currentPlayer === lastRollerColor) {
+        currentPlayer = currentPlayer === "#fff" ? "#000" : "#fff";
+    }
+
+    // Prüfen, ob gleiche Farbe wie zuletzt gewürfelt
+    if (lastRollerColor && currentPlayer === lastRollerColor) {
+      // Sofort auf die andere Farbe umschalten
+      currentPlayer = currentPlayer === "#fff" ? "#000" : "#fff";
+    if (lastRollerColor && currentPlayer === lastRollerColor) {
+        currentPlayer = currentPlayer === "#fff" ? "#000" : "#fff";
+    }
+    }
+
     setTurnIndicator();
     document.querySelector("#dice-container button").classList.add("highlight");
     setRollEnabled(true);
-    computeHints(); updateTrayHighlight(); redraw(); lastProgress=Date.now();
+    computeHints();
+    updateTrayHighlight();
+    redraw();
+    lastProgress = Date.now();
   }, 50);
 }
 
@@ -942,6 +967,9 @@ function finishOrContinueTurn(){
     setTimeout(() => {
       if(!gameOver){
         currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+    if (lastRollerColor && currentPlayer === lastRollerColor) {
+        currentPlayer = currentPlayer === "#fff" ? "#000" : "#fff";
+    }
         setTurnIndicator();
       }
       setRollEnabled(true);
@@ -977,7 +1005,6 @@ function hitTriangle(idx, mx, my, expandPx){
   ctx.closePath();
   return ctx.isPointInPath(mx, my);
 }
-
 
 // --- Map client (CSS pixel) coordinates to canvas internal coordinates ---
 function toCanvasXY(evt){
@@ -1084,7 +1111,10 @@ function playDiceSound(){
   noise.connect(ng); ng.connect(actx.destination); noise.start();
 }
 function rollDice(){
+  
   if(gameOver) return;
+  lastRollerColor = currentPlayer;
+  
   document.querySelector("#dice-container button").classList.remove("highlight");
   if(dice.length>0) return;
   setRollEnabled(false);
@@ -1320,6 +1350,9 @@ try{
       // Delay the switch and re-enable rolling for the human
       setTimeout(() => {
         currentPlayer = currentPlayer==="#fff" ? "#000" : "#fff";
+    if (lastRollerColor && currentPlayer === lastRollerColor) {
+        currentPlayer = currentPlayer === "#fff" ? "#000" : "#fff";
+    }
         setTurnIndicator();
         setRollEnabled(true);
         computeHints(); redraw();
@@ -1330,7 +1363,6 @@ try{
     if (gameOver) { setRollEnabled(true); }
   }
 }
-
 
 // Auto-roll for AI when it's their turn and no dice are present
 function maybeAIRoll(){
@@ -1360,506 +1392,9 @@ rollDice = function(){ _origRollDice(); if(aiShouldPlayNow()) { aiPlayTurn(); } 
 const _origWatchdog = watchdogTick;
 watchdogTick = function(){ _origWatchdog(); if(aiShouldPlayNow() && !aiConfig.running){ aiPlayTurn(); } };
 
-
 </script>
-
-<script id="td_learning_addon">
-// === TD(λ) Learning Add‑On (GUI-neutral) =====================================
-(function(){
-  const STORAGE_KEY = 'bg_td_weights_v1';
-  const GAMMA = 0.99;
-  let   ALPHA = 0.02;         // slow decay at game end
-  const LAMBDA = 0.7;
-  const FEAT_COUNT = 16;
-  // Immutable baseline start-weights (never overwritten)
-  const W0 = [0.8, -0.8, -0.7, 0.6, -0.6, 0.5, 0.6, 0.7, 0.9, -0.9, -0.6, 0.4, -0.4, -0.5, 0.4, 0.0];
-
-  function loadDelta(){
-    try{
-      const j = JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
-      if (Array.isArray(j) && j.length===FEAT_COUNT) return j.map(Number);
-    }catch(e){}
-    return Array(FEAT_COUNT).fill(0);
-  }
-  function saveDelta(dW){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(dW)); }catch(e){} }
-  let dW = loadDelta();
-  let E = Array(FEAT_COUNT).fill(0);
-
-  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
-  function norm(x,d){ return clamp(x/d, -1, 1); }
-  function enemyOf(c){ return c==="#fff" ? "#000" : "#fff"; }
-
-  function pipCountColor(color, pts, br){
-    let sum=0;
-    for (let i=0;i<24;i++){
-      const st = pts[i];
-      if (!st || !st.length) continue;
-      for (const s of st) if (s.color===color) sum += (color==="#fff") ? (24 - i) : (i + 1);
-    }
-    sum += (br[color] ? br[color].length : 0) * 25;
-    return sum;
-  }
-  function countBlots(color, pts){
-    let c=0;
-    for(let i=0;i<24;i++){
-      const st=pts[i];
-      if(st && st.length===1 && st[0].color===color) c++;
-    }
-    return c;
-  }
-  function madeHomePoints(color, pts){
-    let c=0;
-    if(color==="#fff"){
-      for(let i=18;i<=23;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color==="#fff") c++; }
-    } else {
-      for(let i=0;i<=5;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color==="#000") c++; }
-    }
-    return c;
-  }
-  function primeLen(color, pts){
-    let best=0, run=0;
-    if(color==="#fff"){
-      for(let i=0;i<24;i++){
-        const st=pts[i]; const ok = st && st.length>=2 && st[st.length-1].color==="#fff";
-        run = ok ? run+1 : 0; best = Math.max(best, run);
-      }
-    } else {
-      for(let i=23;i>=0;i--){
-        const st=pts[i]; const ok = st && st.length>=2 && st[st.length-1].color==="#000";
-        run = ok ? run+1 : 0; best = Math.max(best, run);
-      }
-    }
-    return Math.min(6, best);
-  }
-  function blockedEntrySquaresAgainst(color, pts){
-    const enemy = enemyOf(color);
-    let c=0;
-    if(color==="#fff"){
-      for(let i=18;i<=23;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color===enemy) c++; }
-    } else {
-      for(let i=0;i<=5;i++){ const st=pts[i]; if(st && st.length>=2 && st[st.length-1].color===enemy) c++; }
-    }
-    return c;
-  }
-
-  // --- snapshot shallow state
-  function snapshot(){
-    const pts = new Array(24);
-    for(let i=0;i<24;i++){
-      const st = (points[i] && points[i].stack) ? points[i].stack : [];
-      pts[i] = st.map(s => ({color:s.color}));
-    }
-    return {
-      points: pts,
-      bar: { "#fff": (bar["#fff"]||[]).map(s=>({color:s.color})), "#000": (bar["#000"]||[]).map(s=>({color:s.color})) },
-      borneOff: { "#fff": borneOff["#fff"]||0, "#000": borneOff["#000"]||0 },
-      currentPlayer: currentPlayer
-    };
-  }
-
-  function featuresFor(color, snap){
-    const f = new Array(FEAT_COUNT).fill(0);
-    const pts = snap.points, br = snap.bar, off = snap.borneOff;
-    const me=color, opp=enemyOf(color);
-    let k=0;
-    const pipMe = pipCountColor(me, pts, br);
-    const pipOp = pipCountColor(opp, pts, br);
-    f[k++] = norm(pipOp - pipMe, 200);         // lead (good if positive)
-    f[k++] = norm(pipMe - pipOp, 200);         // behind
-    f[k++] = (br[me].length||0) / 5;
-    f[k++] = (br[opp].length||0) / 5;
-    f[k++] = countBlots(me, pts) / 6;
-    f[k++] = countBlots(opp, pts) / 6;
-    f[k++] = madeHomePoints(me, pts) / 6;
-    f[k++] = primeLen(me, pts) / 6;
-    f[k++] = off[me] / 15;
-    f[k++] = off[opp] / 15;
-    f[k++] = blockedEntrySquaresAgainst(me, pts) / 6;
-    // mild nonlinearities
-    f[k++] = Math.max(0, (pipOp - pipMe)/200);
-    f[k++] = Math.max(0, (pipMe - pipOp)/200);
-    let anchorsOpp=0;
-    if (me==="#fff"){ for(let i=0;i<=5;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===opp) anchorsOpp++; } }
-    else { for(let i=18;i<=23;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===opp) anchorsOpp++; } }
-    f[k++] = anchorsOpp / 3;
-    let anchorsMe=0;
-    if (me==="#fff"){ for(let i=18;i<=23;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===me) anchorsMe++; } }
-    else { for(let i=0;i<=5;i++){ const st=pts[i]; if(st.length>=2 && st[st.length-1].color===me) anchorsMe++; } }
-    f[k++] = anchorsMe / 6;
-    return f;
-  }
-  function valueOf(color, snap){
-    const f = featuresFor(color, snap);
-    let v=0; for(let i=0;i<FEAT_COUNT;i++) v += (W0[i] + dW[i]) * f[i];
-    return v;
-  }
-  function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
-
-  // --- TD(λ) with traces
-  let traceOn=false, traceColor=null, prevSnap=null;
-  function traceReset(){ E = Array(FEAT_COUNT).fill(0); }
-  function tdUpdate(prevSnap_, nextSnap_, color, reward){
-    const f = featuresFor(color, prevSnap_);
-    const v  = dot(W, f);
-    const v2 = nextSnap_ ? valueOf(color, nextSnap_) : 0;
-    const delta = reward + GAMMA * v2 - v;
-    for(let i=0;i<FEAT_COUNT;i++){
-      E[i] = GAMMA * LAMBDA * E[i] + f[i];
-      dW[i] += ALPHA * delta * E[i];
-      // light clamp to keep stability
-      if (dW[i] > 3) dW[i]=3; else if (dW[i] < -3) dW[i]=-3;
-    }
-  }
-
-  // --- Apply move to a snapshot (for lookahead scoring)
-  function applyMoveSnap(snap, from, to, color){
-    const pts = snap.points, enemy = enemyOf(color);
-    if (from === -1){
-      const arr = snap.bar[color]; if (!arr || !arr.length) return false;
-      const dest = pts[to];
-      if (dest.length===1 && dest[0].color===enemy){ const beaten = dest.pop(); snap.bar[enemy].push(beaten); }
-      const stone = arr.pop(); dest.push(stone); return true;
-    } else {
-      const src = pts[from], dest = pts[to];
-      if (!src.length || src[src.length-1].color!==color) return false;
-      const stone = src.pop();
-      if (dest.length===1 && dest[0].color===enemy){ const beaten = dest.pop(); snap.bar[enemy].push(beaten); }
-      dest.push(stone); return true;
-    }
-  }
-
-  // --- Hooks: before/after move + game end
-  const _moveOne = window.moveOne;
-  window.moveOne = function(from,to){
-    try{
-      if(!traceOn){ traceOn=true; traceColor=currentPlayer; traceReset(); }
-      prevSnap = snapshot();
-    }catch(e){}
-    const r = _moveOne.apply(this, arguments);
-    try{
-      const nextSnap = snapshot();
-      tdUpdate(prevSnap, nextSnap, traceColor||currentPlayer, 0);
-      prevSnap = nextSnap;
-    }catch(e){}
-    return r;
-  };
-
-  const _enterFromBar = window.enterFromBar;
-  window.enterFromBar = function(to){
-    try{
-      if(!traceOn){ traceOn=true; traceColor=currentPlayer; traceReset(); }
-      prevSnap = snapshot();
-    }catch(e){}
-    const ok = _enterFromBar.apply(this, arguments);
-    try{
-      if(ok){
-        const nextSnap = snapshot();
-        tdUpdate(prevSnap, nextSnap, traceColor||currentPlayer, 0);
-        prevSnap = nextSnap;
-      }
-    }catch(e){}
-    return ok;
-  };
-
-  const _performBearOff = window.performBearOff;
-  window.performBearOff = function(index){
-    try{
-      if(!traceOn){ traceOn=true; traceColor=currentPlayer; traceReset(); }
-      prevSnap = snapshot();
-    }catch(e){}
-    const ok = _performBearOff.apply(this, arguments);
-    try{
-      const end = (borneOff["#fff"]>=15 || borneOff["#000"]>=15) && (typeof gameOver!=='undefined' ? gameOver : true);
-      if(end){
-        const aiColor = (function(){
-          try{
-            if (window.aiConfig && aiConfig.playsWhite) return "#fff";
-            if (window.aiConfig && aiConfig.playsBlack) return "#000";
-            return traceColor || currentPlayer;
-          }catch(e){ return traceColor || currentPlayer; }
-        })();
-        const winner = (borneOff["#fff"]>=15) ? "#fff" : "#000";
-        const r = (winner===aiColor) ? 1 : -1;
-        if (prevSnap) tdUpdate(prevSnap, null, aiColor, r);
-        traceOn=false; traceColor=null; prevSnap=null;
-        ALPHA = Math.max(0.005, ALPHA * 0.999);
-        saveDelta(dW);
-      } else {
-        const nextSnap = snapshot();
-        tdUpdate(prevSnap, nextSnap, traceColor||currentPlayer, 0);
-        prevSnap = nextSnap;
-      }
-    }catch(e){}
-    return ok;
-  };
-
-  // --- Enhance move choice (regular board moves only; bar/bo handled elsewhere)
-  (function enhanceChooser(){
-    if (typeof window.scoreMove!=='function') return;
-    if (typeof window.chooseGreedyMove!=='function') return;
-    const _chooseGreedyMove = window.chooseGreedyMove;
-    const BETA = 25; // value weight
-
-    window.chooseGreedyMove = function(color){
-      let best = null, bestScore = -1e9;
-      for(let i=0;i<24;i++){
-        const p=points[i];
-        if(p.stack.length>0 && p.stack[p.stack.length-1].color===color){
-          const moves = getPossibleMoves(i);
-          for(const to of moves){
-            const heur = window.scoreMove(i, to, color) || 0;
-            // simulate on snapshot for V(s')
-            const s = snapshot();
-            applyMoveSnap(s, i, to, color);
-            const v2 = valueOf(color, s);
-            const score = heur + BETA*v2;
-            if(score>bestScore){ bestScore=score; best={from:i,to}; }
-          }
-        }
-      }
-      // fallback to original if nothing found
-      if(!best) return _chooseGreedyMove(color);
-      return best;
-    };
-  })();
-
-  // Small export for manual inspection in console (optional)
-  window.__bg_td = {
-    getW: ()=> W.slice(),
-    reset: ()=>{ W = Array(FEAT_COUNT).fill(0); saveDelta(dW); },
-    save : ()=> saveW(W)
-  };
-})();
-</script>
-
 
 <!-- === Opponent Move Logging + Simple Opening Book Patch (v1) === -->
-<script id="opponent_book_patch">
-(function(){
-  const DB_KEY = "bg_human_book_v1";
-  const SESS_KEY = "bg_human_session_v1";
-  const BOOK_LIMIT = 2000; // cap entries to avoid bloat
-
-  // --- utilities ---
-  function enemyOf(c){ return c==="#fff" ? "#000" : "#fff"; }
-  function isAIColor(c){
-    try { return (c==="#fff" && aiConfig.playsWhite) || (c==="#000" && aiConfig.playsBlack); }
-    catch(e){ return false; }
-  }
-  function isHumanColor(c){ return !isAIColor(c); }
-
-  function encodeBoardString(){
-    // compact, deterministic: "W:counts0..23|B:counts0..23|barW:n|barB:n|offW:n|offB:n|turn:C"
-    const wCounts = [];
-    const bCounts = [];
-    for(let i=0;i<24;i++){
-      const st = points[i]?.stack || [];
-      let wc=0, bc=0;
-      for(const s of st){ if(s.color==="#fff") wc++; else bc++; }
-      wCounts.push(wc); bCounts.push(bc);
-    }
-    const s = [
-      "W:"+wCounts.join(","),
-      "B:"+bCounts.join(","),
-      "barW:"+(bar["#fff"]?.length||0),
-      "barB:"+(bar["#000"]?.length||0),
-      "offW:"+(borneOff["#fff"]||0),
-      "offB:"+(borneOff["#000"]||0),
-      "turn:"+currentPlayer
-    ].join("|");
-    return s;
-  }
-  function djb2(str){
-    let h=5381>>>0;
-    for(let i=0;i<str.length;i++){ h = ((h<<5) + h + str.charCodeAt(i))>>>0; }
-    return h.toString(36);
-  }
-  function stateHash(){ return djb2(encodeBoardString()); }
-
-  function loadBook(){
-    try{ const obj = JSON.parse(localStorage.getItem(DB_KEY)||"{}"); return obj && typeof obj==="object" ? obj : {}; }
-    catch(e){ return {}; }
-  }
-  function saveBook(book){
-    try{ localStorage.setItem(DB_KEY, JSON.stringify(book)); } catch(e){}
-  }
-  function pruneIfNeeded(book){
-    const keys = Object.keys(book);
-    if(keys.length <= BOOK_LIMIT) return;
-    // remove the lowest-frequency entries first
-    keys.sort((a,b)=> (book[a].total||0) - (book[b].total||0));
-    const remove = keys.length - BOOK_LIMIT;
-    for(let i=0;i<remove;i++) delete book[keys[i]];
-  }
-
-  // --- session trajectory of HUMAN (opponent of AI) moves ---
-  let session = [];
-  function resetSession(){
-    session = [];
-    try{ sessionStorage.setItem(SESS_KEY, JSON.stringify(session)); }catch(e){}
-  }
-  resetSession();
-
-  function logOpponentMove(rec){
-    // rec = {preHash, type, from?, to?, index?}
-    try {
-      session.push(rec);
-      sessionStorage.setItem(SESS_KEY, JSON.stringify(session));
-    } catch(e){}
-  }
-
-  function commitSessionToBook(){
-    if(!session.length) return;
-    const book = loadBook();
-    for(const r of session){
-      const key = r.preHash;
-      if(!book[key]) book[key] = { moves: {}, total: 0 };
-      let moveKey;
-      if(r.type==="move"){
-        moveKey = "m:"+r.from+">"+r.to;
-      } else if(r.type==="bar"){
-        moveKey = "b:"+r.to;
-      } else if(r.type==="bearoff"){
-        moveKey = "o:"+r.index;
-      } else {
-        continue;
-      }
-      book[key].moves[moveKey] = (book[key].moves[moveKey]||0) + 1;
-      book[key].total = (book[key].total||0) + 1;
-    }
-    pruneIfNeeded(book);
-    saveBook(book);
-    resetSession();
-  }
-
-  // --- wrap core move functions to capture HUMAN moves ---
-  const _moveOne = window.moveOne;
-  window.moveOne = function(from,to){
-    const humanTurn = isHumanColor(currentPlayer);
-    const h = humanTurn ? stateHash() : null;
-    _moveOne(from,to);
-    if(humanTurn){
-      logOpponentMove({preHash:h, type:"move", from, to});
-    }
-  };
-
-  const _enterFromBar = window.enterFromBar;
-  window.enterFromBar = function(to){
-    const humanTurn = isHumanColor(currentPlayer);
-    const h = humanTurn ? stateHash() : null;
-    const ok = _enterFromBar(to);
-    if(humanTurn && ok){
-      logOpponentMove({preHash:h, type:"bar", to});
-    }
-    return ok;
-  };
-
-  const _performBearOff = window.performBearOff;
-  window.performBearOff = function(index){
-    const humanTurn = isHumanColor(currentPlayer);
-    const h = humanTurn ? stateHash() : null;
-    const ok = _performBearOff(index);
-    if(humanTurn && ok){
-      logOpponentMove({preHash:h, type:"bearoff", index});
-    }
-    // If game ended here, decide whether to commit the human session
-    if(gameOver){
-      const winnerColor = (borneOff["#fff"]>=15) ? "#fff" : (borneOff["#000"]>=15 ? "#000" : null);
-      if(winnerColor && isHumanColor(winnerColor)){
-        commitSessionToBook();
-      } else {
-        // if AI won, just forget the session trajectory
-        resetSession();
-      }
-    }
-    return ok;
-  };
-
-  // Also reset session on restart
-  const _restartGame = window.restartGame;
-  window.restartGame = function(){
-    resetSession();
-    _restartGame();
-  };
-
-  // --- AI: consult human book before heuristic ---
-  function aiSelectFromBook(color){
-    const h = stateHash();
-    const book = loadBook();
-    const entry = book[h];
-    if(!entry || !entry.moves) return null;
-
-    // compute legal options now
-    const legal = [];
-    if(bar[color].length>0){
-      const entries = getBarEntryMoves();
-      for(const t of entries) legal.push({type:"bar", to:t});
-    } else {
-      // regular moves
-      for(let i=0;i<24;i++){
-        const p = points[i];
-        if(p.stack.length && p.stack[p.stack.length-1].color===color){
-          const ms = getPossibleMoves(i);
-          for(const t of ms) legal.push({type:"move", from:i, to:t});
-        }
-      }
-      // bear-off
-      if(isHomeReady(color)){
-        for(let i=0;i<24;i++){
-          const st=points[i].stack;
-          if(st.length && st[st.length-1].color===color && canBearOffFrom(i)){
-            legal.push({type:"bearoff", index:i});
-          }
-        }
-      }
-    }
-    if(!legal.length) return null;
-
-    // score each legal move by book frequency
-    let best=null, bestScore=-1;
-    for(const mv of legal){
-      let key;
-      if(mv.type==="move") key = "m:"+mv.from+">"+mv.to;
-      else if(mv.type==="bar") key = "b:"+mv.to;
-      else if(mv.type==="bearoff") key = "o:"+mv.index;
-      const cnt = entry.moves[key]||0;
-      if(cnt>bestScore){ bestScore=cnt; best=mv; }
-    }
-    return bestScore>0 ? best : null;
-  }
-
-  // hook into AI loop: prefer book when available
-  const _chooseGreedyMove = window.chooseGreedyMove;
-  window.chooseGreedyMove = function(color){
-    const mvFromBook = aiSelectFromBook(color);
-    if(mvFromBook && mvFromBook.type==="move") return {from: mvFromBook.from, to: mvFromBook.to, _fromBook:true};
-    // fallback to original
-    return _chooseGreedyMove(color);
-  };
-
-  const _chooseBarEntryTarget = window.chooseBarEntryTarget;
-  window.chooseBarEntryTarget = function(color, entries){
-    const mvFromBook = aiSelectFromBook(color);
-    if(mvFromBook && mvFromBook.type==="bar" && entries.includes(mvFromBook.to)){
-      return mvFromBook.to;
-    }
-    return _chooseBarEntryTarget(color, entries);
-  };
-
-  // Bear-off: handled inside aiPlayTurn loop by scanning opts; we override pick there
-  const _aiPlayTurn = window.aiPlayTurn;
-  window.aiPlayTurn = async function(){
-    // We can't easily intercept each step inside original loop; however we keep book preference
-    // by wrapping chooseGreedyMove and chooseBarEntryTarget as done above.
-    return _aiPlayTurn.apply(this, arguments);
-  };
-
-  // For transparency in console
-  console.log("[Opponent Book Patch] active. Entries:", Object.keys(loadBook()).length);
-})();
-</script>
-
-
 <!-- === Anti Double-Roll Guard (v2, 1s window) === -->
 <script id="anti_double_roll_guard">
 (function(){
@@ -1922,11 +1457,11 @@ watchdogTick = function(){ _origWatchdog(); if(aiShouldPlayNow() && !aiConfig.ru
     };
   }
 
-  console.log("[Anti Double-Roll Guard] active (1s window)");
-})();
+  })();
 
 /* === Difficulty & Phase-Aware Heuristics (additive) === */
-let aiDifficulty = "easy"; // easy | medium | hard | brutal
+//let aiDifficulty = "easy"; // easy | medium | hard | brutal
+let aiDifficulty = "brutal";
 
 function setDifficultyFromSelect(){
   const dsel = document.getElementById("difficulty");
